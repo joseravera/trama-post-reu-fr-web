@@ -1,0 +1,29 @@
+<!--
+  brand.html — Activos de marca Trama (manual de marca).
+  Se incluye una sola vez al principio del body, con include('brand').
+  Uso de una forma:  <svg class="shape"><use href="#shape-finanzas"/></svg>
+  Formas por club (manual, p. "Clubes"):
+    #shape-consultoria  → rayos        (#FF3A4E)
+    #shape-emprendedores→ estrella 8   (#FE5501)
+    #shape-finanzas     → estrella 4   (#00C1B0)
+    #shape-it           → estrella 12  (#FED201)
+    #shape-media        → asterisco    (#2569FF)
+    #shape-trama        → corazón      (#8865DD, Trama general)
+  Para la versión "línea" del manual agregá la clase .shape--line al <svg>.
+-->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="shape-media" viewBox="0 0 100 100"><path d="M41.50 2.00 L41.50 29.48 L22.07 10.05 L10.05 22.07 L29.48 41.50 L2.00 41.50 L2.00 58.50 L29.48 58.50 L10.05 77.93 L22.07 89.95 L41.50 70.52 L41.50 98.00 L58.50 98.00 L58.50 70.52 L77.93 89.95 L89.95 77.93 L70.52 58.50 L98.00 58.50 L98.00 41.50 L70.52 41.50 L89.95 22.07 L77.93 10.05 L58.50 29.48 L58.50 2.00Z"/></symbol>
+    <symbol id="shape-emprendedores" viewBox="0 0 100 100"><path d="M93.84 50.00 L81.00 37.16 L81.00 19.00 L62.84 19.00 L50.00 6.16 L37.16 19.00 L19.00 19.00 L19.00 37.16 L6.16 50.00 L19.00 62.84 L19.00 81.00 L37.16 81.00 L50.00 93.84 L62.84 81.00 L81.00 81.00 L81.00 62.84Z"/></symbol>
+    <symbol id="shape-it" viewBox="0 0 100 100"><path d="M50.00 2.00 L56.99 23.92 L74.00 8.43 L69.09 30.91 L91.57 26.00 L76.08 43.01 L98.00 50.00 L76.08 56.99 L91.57 74.00 L69.09 69.09 L74.00 91.57 L56.99 76.08 L50.00 98.00 L43.01 76.08 L26.00 91.57 L30.91 69.09 L8.43 74.00 L23.92 56.99 L2.00 50.00 L23.92 43.01 L8.43 26.00 L30.91 30.91 L26.00 8.43 L43.01 23.92Z"/></symbol>
+    <symbol id="shape-finanzas" viewBox="0 0 100 100"><path d="M50 2 C55 38 62 45 98 50 C62 55 55 62 50 98 C45 62 38 55 2 50 C38 45 45 38 50 2Z"/></symbol>
+    <symbol id="shape-consultoria" viewBox="0 0 100 100"><path class="shape-stroke" d="M97.00 50.00 L3.00 50.00 M94.70 64.52 L5.30 35.48 M88.02 77.63 L11.98 22.37 M77.63 88.02 L22.37 11.98 M64.52 94.70 L35.48 5.30 M50.00 97.00 L50.00 3.00 M35.48 94.70 L64.52 5.30 M22.37 88.02 L77.63 11.98 M11.98 77.63 L88.02 22.37 M5.30 64.52 L94.70 35.48" fill="none" stroke="currentColor" stroke-width="4.5"/></symbol>
+    <symbol id="shape-trama" viewBox="0 0 100 100"><path d="M50 90 C22 70 4 54 4 33 C4 18 15 8 29 8 C39 8 46 14 50 22 C54 14 61 8 71 8 C85 8 96 18 96 33 C96 54 78 70 50 90Z"/></symbol>
+    <!-- Iconos de "Elementos y misceláneas" -->
+    <symbol id="ico-bookmark" viewBox="0 0 24 24"><path d="M6 3h12v18l-6-5-6 5z"/></symbol>
+    <symbol id="ico-send" viewBox="0 0 24 24"><path d="M3 4l18 7-18 7 4-7zM7 11h7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></symbol>
+    <symbol id="ico-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M15.5 15.5L21 21" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></symbol>
+    <symbol id="ico-arrow" viewBox="0 0 24 24"><path d="M4 12h15M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="ico-check" viewBox="0 0 24 24"><path d="M4 12.5l5 5L20 6.5" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  </defs>
+</svg>

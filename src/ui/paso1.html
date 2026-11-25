@@ -1,0 +1,97 @@
+<!-- Dueño: Persona A (sección 5, A2). Carga: club, empresa, fecha de reunión, notas de Granola. Sin scriptlets. -->
+<div class="grid-carga" id="paso1">
+  <form class="card" id="form-paso1" novalidate>
+    <div class="card-head">
+      <div>
+        <h2 class="titulo">Nueva reunión</h2>
+        <p class="muted" style="margin-top:6px">Completá estos datos y pegá las notas tal como salen de Granola.</p>
+      </div>
+      <ol class="pasos" aria-label="Progreso">
+        <li aria-current="step"><b>1</b>Notas</li>
+        <li><b>2</b>Revisión</li>
+        <li><b>3</b>Listo</li>
+      </ol>
+    </div>
+
+    <div class="campos">
+      <div class="campo">
+        <label for="p1-club">Club</label>
+        <select id="p1-club" class="control" disabled></select>
+        <span class="ayuda" id="p1-club-ayuda">Se carga en la hoja de tu club.</span>
+      </div>
+
+      <div class="campo">
+        <label for="p1-fecha">Fecha de la reunión</label>
+        <input type="date" id="p1-fecha" class="control" required>
+      </div>
+
+      <div class="campo campo--full">
+        <label for="p1-empresa">Empresa</label>
+        <div class="input-con-chip">
+          <input id="p1-empresa" class="control" autocomplete="off" spellcheck="false"
+                 placeholder="Empezá a escribir: Mercado Pago, Accenture…"
+                 role="combobox" aria-expanded="false" aria-controls="p1-sugerencias" aria-autocomplete="list">
+          <span class="chip chip--existente" id="chip-existente" hidden>Ya está en el CRM</span>
+          <span class="chip chip--nueva" id="chip-nueva" hidden>Empresa nueva</span>
+          <ul class="sugerencias" id="p1-sugerencias" role="listbox" hidden></ul>
+        </div>
+        <span class="ayuda" id="p1-empresa-estado"></span>
+      </div>
+
+      <div class="campo campo--full">
+        <label for="p1-notas">Notas de Granola</label>
+        <textarea id="p1-notas" class="control" placeholder="Pegá acá el resumen completo que generó Granola…"></textarea>
+        <div class="contador" id="p1-contador">
+          <span data-texto>0 / 100 caracteres mínimos</span>
+          <span class="barra"><i></i></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="aviso aviso--error" id="p1-error" role="alert" hidden style="margin-top:18px"></div>
+
+    <div class="acciones">
+      <span class="muted" style="font-size:13px">Nada se guarda hasta que confirmes en el paso 2.</span>
+      <button type="submit" class="btn btn--primario" id="p1-procesar" disabled>
+        Procesar notas <svg class="ico"><use href="#ico-arrow"/></svg>
+      </button>
+    </div>
+
+    <div class="cargando" id="p1-loader" hidden aria-live="polite">
+      <svg class="shape"><use data-club-shape href="#shape-trama"/></svg>
+      <b>Leyendo las notas…</b>
+      <span class="muted">Estamos sacando contacto, compromisos y próxima acción. Tarda unos segundos.</span>
+    </div>
+  </form>
+
+  <!-- Mosaico "Así funciona", en el sistema de bloques del manual (ejemplo "Libre") -->
+  <aside class="mosaico" aria-label="Cómo funciona">
+    <div class="tile t-rojo solo-desktop"><svg class="shape c-crema"><use href="#shape-trama"/></svg></div>
+    <div class="tile t-amarillo solo-desktop"></div>
+    <div class="tile t-naranja solo-desktop"><svg class="shape shape--line c-azul"><use href="#shape-media"/></svg></div>
+
+    <div class="tile tile--full tile--texto t-blanco">
+      <span class="num">01</span>
+      <b>Pegás las notas</b>
+      <span>Copiá el resumen de Granola tal cual. No hace falta ordenarlo.</span>
+    </div>
+
+    <div class="tile t-azul solo-desktop"><svg class="shape c-naranja"><use href="#shape-emprendedores"/></svg></div>
+    <div class="tile tile--ancho tile--texto t-turquesa">
+      <span class="num">02</span>
+      <b>Revisás</b>
+      <span>Corregís lo que sacó la IA. Lo que falta queda marcado.</span>
+    </div>
+
+    <div class="tile tile--ancho tile--texto t-negro">
+      <span class="num">03</span>
+      <b>Listo</b>
+      <span>CRM actualizado y el borrador en tu Gmail, con adjuntos y tu firma.</span>
+    </div>
+    <div class="tile t-club solo-desktop"><svg class="shape c-on-club"><use data-club-shape href="#shape-trama"/></svg></div>
+
+    <div class="tile t-amarillo solo-desktop"><svg class="shape c-rojo"><use href="#shape-consultoria"/></svg></div>
+    <div class="tile t-azul solo-desktop"><svg class="shape shape--line c-blanco"><use href="#shape-finanzas"/></svg></div>
+    <div class="tile t-violeta solo-desktop"><svg class="shape c-blanco"><use href="#shape-it"/></svg></div>
+  </aside>
+</div>

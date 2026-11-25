@@ -1,0 +1,23 @@
+<!-- Dueño: Persona A (sección 5, A7). Pestaña "Mis seguimientos". client.js completa la lista. -->
+<div class="card-head" style="margin-bottom:16px">
+  <div>
+    <h2 class="titulo" style="font-size:26px">Mis seguimientos</h2>
+    <p class="muted" style="margin-top:6px">Empresas a tu cargo que siguen abiertas. Lo vencido, primero.</p>
+  </div>
+  <div class="filtros" role="group" aria-label="Filtrar">
+    <button type="button" class="filtro" data-filtro="todos" aria-pressed="true">Todos</button>
+    <button type="button" class="filtro" data-filtro="vencidos" aria-pressed="false">Vencidos</button>
+    <button type="button" class="filtro" data-filtro="semana" aria-pressed="false">Esta semana</button>
+  </div>
+</div>
+
+<div class="aviso aviso--error" id="seg-error" role="alert" hidden style="margin-bottom:12px"></div>
+<p class="muted" id="seg-mensaje" hidden>Cargando…</p>
+
+<ul class="lista" id="lista-seguimientos" aria-live="polite"></ul>
+
+<div class="vacio" id="seg-vacio" hidden>
+  <svg class="shape"><use data-club-shape href="#shape-trama"/></svg>
+  <b class="titulo" style="font-size:22px">Nada pendiente</b>
+  <span class="muted" id="seg-vacio-texto">No tenés seguimientos abiertos. Cuando cargues una reunión, aparece acá.</span>
+</div>

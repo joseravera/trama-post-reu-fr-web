@@ -1,0 +1,145 @@
+<!-- Dueño: Persona A (sección 5, A5 y A6). Revisión, vista previa del mail, confirmación y resultado. -->
+<div class="card" id="paso2" hidden>
+  <div class="card-head">
+    <div>
+      <h2 class="titulo">Revisá y confirmá</h2>
+      <p class="muted" style="margin-top:6px" id="p2-resumen-empresa"></p>
+    </div>
+    <ol class="pasos" aria-label="Progreso">
+      <li><b>1</b>Notas</li>
+      <li aria-current="step"><b>2</b>Revisión</li>
+      <li><b>3</b>Listo</li>
+    </ol>
+  </div>
+
+  <div class="aviso aviso--info" id="p2-error-extraccion" hidden style="margin-bottom:18px"></div>
+
+  <div class="grid-revision">
+    <div>
+      <section class="bloque">
+        <h3 class="titulo">Contacto</h3>
+        <div class="campos">
+          <div class="campo" data-campo="persona">
+            <label for="p2-persona">Persona</label>
+            <input id="p2-persona" class="control">
+          </div>
+          <div class="campo" data-campo="rolPersona">
+            <label for="p2-rolPersona">Rol</label>
+            <input id="p2-rolPersona" class="control">
+          </div>
+          <div class="campo campo--full" data-campo="mail">
+            <label for="p2-mail">Mail *</label>
+            <input id="p2-mail" class="control" type="email">
+          </div>
+          <div class="campo" data-campo="telefono">
+            <label for="p2-telefono">Teléfono</label>
+            <input id="p2-telefono" class="control">
+          </div>
+          <div class="campo" data-campo="linkedin">
+            <label for="p2-linkedin">LinkedIn</label>
+            <input id="p2-linkedin" class="control">
+          </div>
+        </div>
+      </section>
+
+      <section class="bloque">
+        <h3 class="titulo">Estado y próxima acción</h3>
+        <div class="campos">
+          <div class="campo campo--full" data-campo="estadoSugerido">
+            <label for="p2-estado">Estado *</label>
+            <select id="p2-estado" class="control"></select>
+          </div>
+          <div class="campo" data-campo="proximaAccion">
+            <label for="p2-proximaAccion">Próxima acción</label>
+            <input id="p2-proximaAccion" class="control">
+          </div>
+          <div class="campo" data-campo="fechaProximaAccion">
+            <label for="p2-fechaProximaAccion">Fecha de la próxima acción</label>
+            <input id="p2-fechaProximaAccion" class="control" type="date">
+          </div>
+        </div>
+      </section>
+
+      <section class="bloque">
+        <h3 class="titulo">Compromisos</h3>
+        <div class="lista-editable campo" data-lista="compromisosEmpresa">
+          <label>De la empresa</label>
+          <div class="items"></div>
+          <button type="button" class="btn btn--secundario btn--chico agregar">+ Agregar</button>
+        </div>
+        <div class="lista-editable campo" data-lista="compromisosTrama">
+          <label>De Trama (o lo que nos pidieron)</label>
+          <div class="items"></div>
+          <button type="button" class="btn btn--secundario btn--chico agregar">+ Agregar</button>
+        </div>
+        <div class="campo" data-campo="parrafoCompromisos">
+          <label for="p2-parrafoCompromisos">Párrafo de compromisos para el mail</label>
+          <textarea id="p2-parrafoCompromisos" class="control corto" rows="3"></textarea>
+        </div>
+      </section>
+
+      <section class="bloque">
+        <h3 class="titulo">Resumen para Comentarios</h3>
+        <div class="campo" data-campo="comentarios">
+          <label for="p2-comentarios">Resumen de esta reunión</label>
+          <textarea id="p2-comentarios" class="control corto" rows="4"></textarea>
+        </div>
+        <div class="campo" id="p2-previos-caja" hidden>
+          <label>Comentarios que ya tenía la empresa en el CRM</label>
+          <pre class="previos" id="p2-previos"></pre>
+        </div>
+      </section>
+
+      <section class="bloque">
+        <h3 class="titulo">Adjuntos extra</h3>
+        <span class="ayuda muted" style="font-size:12px">El PDB y el documento del evento van siempre.</span>
+        <div class="adjuntos muted" id="p2-adjuntos">Cargando…</div>
+      </section>
+    </div>
+
+    <div class="preview">
+      <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
+        <h3 class="titulo" style="font-size:16px">Vista previa del mail</h3>
+        <span class="muted" style="font-size:12px" id="p2-preview-estado"></span>
+      </div>
+      <iframe id="p2-preview" sandbox="" title="Vista previa del mail"></iframe>
+    </div>
+  </div>
+
+  <div class="aviso aviso--error" id="p2-error" role="alert" hidden style="margin-top:18px"></div>
+
+  <div class="acciones">
+    <button type="button" id="p2-volver" class="btn btn--secundario">Volver</button>
+    <button type="button" id="p2-confirmar" class="btn btn--primario">
+      Confirmar <svg class="ico"><use href="#ico-check"/></svg>
+    </button>
+  </div>
+
+  <div class="cargando" id="p2-loader" hidden aria-live="polite">
+    <svg class="shape"><use data-club-shape href="#shape-trama"/></svg>
+    <b>Confirmando…</b>
+    <span class="muted">Actualizando el CRM y creando el borrador en tu Gmail.</span>
+  </div>
+</div>
+
+<div class="card" id="exito" hidden>
+  <div class="card-head">
+    <div>
+      <h2 class="titulo" id="exito-titulo">Listo</h2>
+      <p style="margin-top:10px" id="exito-mensaje"></p>
+    </div>
+    <ol class="pasos" aria-label="Progreso">
+      <li><b>1</b>Notas</li>
+      <li><b>2</b>Revisión</li>
+      <li aria-current="step"><b>3</b>Listo</li>
+    </ol>
+  </div>
+  <div class="acciones" style="justify-content:flex-start">
+    <a id="exito-fila" class="btn btn--secundario" target="_blank" rel="noopener">Ver el CRM</a>
+    <a id="exito-borrador" class="btn btn--primario" target="_blank" rel="noopener">
+      Abrir el borrador en Gmail <svg class="ico"><use href="#ico-send"/></svg>
+    </a>
+    <button type="button" id="exito-reintentar" class="btn btn--primario" hidden>Reintentar solo el borrador</button>
+    <button type="button" id="exito-otro" class="btn btn--secundario">Cargar otro post-reunión</button>
+  </div>
+</div>

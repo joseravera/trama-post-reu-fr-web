@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trama FR Assistant</title>
+  <?!= include('styles'); ?>
+</head>
+<!--
+  Dueño: Persona A (sección 5, A1). Estructura general: header, pestañas y vistas.
+  El nombre, el rol y el club los completa client.js con lo que devuelve inicio().
+  Los parciales incluidos con include() NO evalúan scriptlets.
+-->
+<body data-club="">
+  <?!= include('brand'); ?>
+
+  <div class="app">
+    <aside class="rail" aria-hidden="true"><span>Trama ITBA · FR Assistant</span></aside>
+
+    <main class="main">
+      <header class="header">
+        <?!= include('logo'); ?>
+        <div class="marca">
+          <b>FR Assistant</b>
+          <small>Trama ITBA · Fundraising</small>
+        </div>
+        <div class="spacer"></div>
+        <div class="usuario" id="usuario" hidden>
+          <div class="datos">
+            <span class="nombre" id="u-nombre"></span>
+            <span class="rol"><span id="u-rol"></span> · <span data-club-nombre>Trama ITBA</span></span>
+          </div>
+          <svg class="sello" viewBox="0 0 100 100" role="img" aria-label="Sello del club">
+            <circle class="fondo" cx="50" cy="50" r="50"/>
+            <path id="sello-curva" d="M50 50 m-34 0 a34 34 0 1 1 68 0 a34 34 0 1 1 -68 0" fill="none"/>
+            <text><textPath href="#sello-curva" textLength="212" lengthAdjust="spacing" data-sello-texto></textPath></text>
+            <g class="centro"><use data-club-shape href="#shape-trama" x="36" y="36" width="28" height="28"/></g>
+          </svg>
+        </div>
+      </header>
+
+      <p class="muted" id="cargando-inicial">Cargando…</p>
+
+      <section class="sin-acceso" id="acceso-denegado" hidden>
+        <div class="card">
+          <span class="globo globo--crema">FR Assistant</span>
+          <h1 class="titulo">No tenés acceso <span>(todavía)</span></h1>
+          <p>Entraste como <code id="acceso-mail"></code>, pero esa cuenta no está registrada en el sistema.</p>
+          <p>Pedile a tu coordinador que te agregue en la hoja <code>_Usuarios</code> con tu mail, club y rol. Después recargá esta página.</p>
+          <div class="formas" aria-hidden="true">
+            <svg class="shape" style="color:var(--rojo)"><use href="#shape-consultoria"/></svg>
+            <svg class="shape" style="color:var(--naranja)"><use href="#shape-emprendedores"/></svg>
+            <svg class="shape" style="color:var(--turquesa)"><use href="#shape-finanzas"/></svg>
+            <svg class="shape" style="color:var(--amarillo)"><use href="#shape-it"/></svg>
+            <svg class="shape" style="color:var(--azul)"><use href="#shape-media"/></svg>
+            <svg class="shape" style="color:var(--violeta)"><use href="#shape-trama"/></svg>
+          </div>
+        </div>
+      </section>
+
+      <div id="app" hidden>
+        <section class="hero">
+          <span class="globo">
+            <svg class="shape c-on-club" style="font-size:16px"><use data-club-shape href="#shape-trama"/></svg>
+            <span data-club-nombre>Trama ITBA</span>
+          </span>
+          <h1 class="titulo">Hola, <span class="acento" id="hola-nombre"></span></h1>
+          <p>Pegá las notas de Granola. Nosotros completamos el CRM y te dejamos el mail armado en tu Gmail, listo para revisar.</p>
+        </section>
+
+        <div id="avisos-globales"></div>
+
+        <nav class="tabs" role="tablist" aria-label="Secciones">
+          <button type="button" class="tab" role="tab" id="tab-carga" aria-controls="panel-carga" aria-selected="true">Cargar post-reunión</button>
+          <button type="button" class="tab" role="tab" id="tab-seg" aria-controls="panel-seg" aria-selected="false">
+            Mis seguimientos <span class="cuenta" data-cuenta-seg hidden>0</span>
+          </button>
+        </nav>
+
+        <section class="panel" id="panel-carga" role="tabpanel" aria-labelledby="tab-carga">
+          <?!= include('paso1'); ?>
+          <?!= include('paso2'); ?>
+        </section>
+
+        <section class="panel" id="panel-seg" role="tabpanel" aria-labelledby="tab-seg" hidden>
+          <?!= include('seguimientos'); ?>
+        </section>
+      </div>
+
+      <footer class="footer">
+        <svg class="shape"><use href="#shape-trama"/></svg>
+        <span>Trama ITBA · Fundraising</span>
+        <span>·</span>
+        <span>Los mails quedan como borrador en tu Gmail. Nunca se envían solos.</span>
+      </footer>
+    </main>
+  </div>
+
+  <?!= include('client.js'); ?>
+</body>
+</html>

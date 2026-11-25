@@ -1,0 +1,572 @@
+<script>
+  // Dueño: Persona A (sección 5, A1–A7). Lógica del navegador. El texto que viene del servidor (CRM, LLM)
+  // se muestra con textContent; la vista previa del mail va en un iframe con sandbox.
+  (function () {
+    'use strict';
+
+    var CAMPOS_TEXTO = ['persona', 'rolPersona', 'mail', 'telefono', 'linkedin', 'proximaAccion', 'fechaProximaAccion', 'parrafoCompromisos', 'comentarios'];
+    var MIN_NOTAS = 100;
+    var MAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    var SVG_NS = 'http://www.w3.org/2000/svg';
+
+    // Club → forma del manual de marca (ver brand.html). Agro y Trama Lab no están en el manual.
+    var FORMA_CLUB = {
+      'Consultoría': 'consultoria',
+      'Emprendedores': 'emprendedores',
+      'Finanzas y Tecnología': 'finanzas',
+      'Agro': 'it',
+      'Trama Lab': 'media',
+      '': 'trama'
+    };
+
+    var st = { ctx: null, info: null, solicitud: null, resultado: null, ultimo: null, seguimientos: [], filtro: 'todos', sugerencia: -1, seq: { buscar: 0, info: 0, preview: 0 } };
+
+    // ---------- utilidades ----------
+    function $(id) { return document.getElementById(id); }
+    function todos(sel, ctx) { return Array.prototype.slice.call((ctx || document).querySelectorAll(sel)); }
+    function mostrar(e, si) { e.hidden = !si; }
+    function el(tag, attrs, hijos) {
+      var e = document.createElement(tag);
+      Object.keys(attrs || {}).forEach(function (k) {
+        if (k === 'texto') e.textContent = attrs[k];
+        else if (k === 'clase') e.className = attrs[k];
+        else if (k.indexOf('on') === 0) e.addEventListener(k.slice(2), attrs[k]);
+        else e.setAttribute(k, attrs[k]);
+      });
+      (hijos || []).forEach(function (h) { if (h) e.appendChild(typeof h === 'string' ? document.createTextNode(h) : h); });
+      return e;
+    }
+    // <svg class="shape"><use href="#shape-..."/></svg>
+    function forma(id) {
+      var svg = document.createElementNS(SVG_NS, 'svg');
+      svg.setAttribute('class', 'shape');
+      var use = document.createElementNS(SVG_NS, 'use');
+      use.setAttribute('href', '#shape-' + id);
+      svg.appendChild(use);
+      return svg;
+    }
+    function llamar(nombre) {
+      var args = Array.prototype.slice.call(arguments, 1);
+      return new Promise(function (ok, mal) {
+        var r = google.script.run.withSuccessHandler(ok).withFailureHandler(mal);
+        r[nombre].apply(r, args);
+      });
+    }
+    // Los mensajes del servidor ya llegan en criollo (src/app/mensajes.ts). Acá se traducen los
+    // errores que pasan antes de llegar al servidor: conexión cortada o sesión de Google vencida.
+    function msg(e) {
+      var t = String((e && e.message) || e || '').replace(/^\w*(Exception|Error)\w*:\s*/, '');
+      if (/NetworkError|Connection failure|HTTP 0|Failed to fetch/i.test(t)) return 'Se cortó la conexión. Revisá tu internet y probá de nuevo.';
+      if (/Authorization is required|autorizaci[oó]n|not authorized/i.test(t)) return 'Tu sesión de Google venció o faltan permisos. Recargá la página.';
+      return t || 'Ocurrió un error inesperado. Probá de nuevo y, si sigue pasando, avisale al equipo.';
+    }
+    function debounce(fn, ms) { var t; return function () { clearTimeout(t); t = setTimeout(fn, ms); }; }
+    function error(id, texto) { $(id).textContent = texto || ''; mostrar($(id), !!texto); }
+    function fechaLegible(iso) { if (!iso) return '—'; var p = iso.split('-'); return p[2] + '/' + p[1] + '/' + p[0]; }
+    function valor(id) { var v = $(id).value.trim(); return v === '' ? null : v; }
+    function utc(iso) { var p = iso.split('-').map(Number); return Date.UTC(p[0], p[1] - 1, p[2]); }
+    // Días desde hoy (la fecha del servidor) hasta iso; Infinity si no hay fecha.
+    function diasHasta(iso) { return iso ? Math.round((utc(iso) - utc(st.ctx.hoy)) / 86400000) : Infinity; }
+    function fechaCorta(iso) {
+      if (!iso) return 'Sin fecha';
+      var p = iso.split('-');
+      var dia = new Date(utc(iso)).toLocaleDateString('es-AR', { weekday: 'short', timeZone: 'UTC' }).replace('.', '');
+      return dia + ' ' + p[2] + '/' + p[1];
+    }
+
+    // ---------- Tema del club ----------
+    function aplicarClub(club) {
+      club = club || '';
+      document.body.setAttribute('data-club', club);
+      var href = '#shape-' + (FORMA_CLUB[club] || 'trama');
+      todos('[data-club-shape]').forEach(function (u) { u.setAttribute('href', href); });
+      todos('[data-club-nombre]').forEach(function (e) { e.textContent = club || 'Trama ITBA'; });
+      var nombre = (club || 'trama itba').toLowerCase() + ' · ';
+      var reps = Math.max(1, Math.round(26 / nombre.length));
+      todos('[data-sello-texto]').forEach(function (e) { e.textContent = new Array(reps + 1).join(nombre); });
+    }
+
+    // ---------- A1: inicio y pestañas ----------
+    function iniciar() {
+      llamar('inicio').then(function (ctx) {
+        st.ctx = ctx;
+        mostrar($('cargando-inicial'), false);
+        if (!ctx.usuario) {
+          $('acceso-mail').textContent = ctx.mail || '(desconocida)';
+          mostrar($('acceso-denegado'), true);
+          return;
+        }
+        var u = ctx.usuario;
+        $('u-nombre').textContent = u.nombre;
+        $('u-rol').textContent = u.rol;
+        $('hola-nombre').textContent = String(u.nombre).split(' ')[0];
+        mostrar($('usuario'), true);
+        aplicarClub(u.club);
+        if (ctx.avisoTriggers) $('avisos-globales').appendChild(el('div', { clase: 'aviso aviso--info', style: 'margin-bottom:16px', texto: ctx.avisoTriggers }));
+        iniciarPaso1();
+        iniciarPaso2();
+        iniciarPestanas();
+        iniciarSeguimientos();
+        mostrar($('app'), true);
+        cargarSeguimientos(); // para la cuenta de vencidos en la pestaña
+      }).catch(function (e) { $('cargando-inicial').textContent = 'No se pudo cargar la app: ' + msg(e); });
+    }
+
+    function iniciarPestanas() {
+      todos('.tab').forEach(function (b) {
+        b.addEventListener('click', function () {
+          todos('.tab').forEach(function (t) {
+            var activa = t === b;
+            t.setAttribute('aria-selected', String(activa));
+            mostrar($(t.getAttribute('aria-controls')), activa);
+          });
+          if (b.id === 'tab-seg') cargarSeguimientos();
+        });
+      });
+    }
+
+    // ---------- A2: paso 1 ----------
+    function iniciarPaso1() {
+      var club = $('p1-club');
+      st.ctx.clubes.forEach(function (c) { club.appendChild(el('option', { value: c, texto: c })); });
+      if (st.ctx.usuario.rol === 'Codirectora') { // editable solo para codirectoras
+        club.disabled = false;
+        $('p1-club-ayuda').textContent = 'Como codirectora, podés cargar para cualquier club.';
+      }
+      club.addEventListener('change', function () {
+        aplicarClub(club.value);
+        $('p1-empresa').value = '';
+        cerrarSugerencias();
+        limpiarInfo();
+      });
+
+      $('p1-fecha').value = st.ctx.hoy;
+      $('p1-fecha').max = st.ctx.hoy;
+
+      var empresa = $('p1-empresa');
+      var buscar = debounce(buscarEmpresas, 300);
+      var consultar = debounce(consultarEmpresa, 300);
+      empresa.addEventListener('input', function () { limpiarInfo(); buscar(); consultar(); });
+      empresa.addEventListener('keydown', navegarSugerencias);
+      empresa.addEventListener('blur', function () { setTimeout(cerrarSugerencias, 150); });
+
+      $('p1-notas').addEventListener('input', function () { actualizarContador(); actualizarProcesar(); });
+      $('form-paso1').addEventListener('submit', function (ev) { ev.preventDefault(); procesar(); });
+      actualizarContador();
+    }
+
+    function actualizarContador() {
+      var n = $('p1-notas').value.trim().length;
+      var c = $('p1-contador');
+      c.classList.toggle('ok', n >= MIN_NOTAS);
+      c.querySelector('[data-texto]').textContent = n >= MIN_NOTAS
+        ? n.toLocaleString('es-AR') + ' caracteres'
+        : n + ' / ' + MIN_NOTAS + ' caracteres mínimos';
+      c.querySelector('.barra i').style.width = Math.min(100, (n / MIN_NOTAS) * 100) + '%';
+    }
+
+    function cerrarSugerencias() {
+      mostrar($('p1-sugerencias'), false);
+      st.sugerencia = -1;
+      $('p1-empresa').setAttribute('aria-expanded', 'false');
+      $('p1-empresa').removeAttribute('aria-activedescendant');
+    }
+
+    function buscarEmpresas() {
+      var texto = $('p1-empresa').value.trim();
+      var lista = $('p1-sugerencias');
+      if (!texto) { cerrarSugerencias(); return; }
+      var n = ++st.seq.buscar;
+      llamar('buscarEmpresas', $('p1-club').value, texto).then(function (empresas) {
+        if (n !== st.seq.buscar) return;
+        lista.innerHTML = '';
+        empresas.slice(0, 8).forEach(function (nombre, i) {
+          lista.appendChild(el('li', {
+            role: 'option', id: 'sug-' + i, 'aria-selected': 'false', 'data-valor': nombre,
+            onmousedown: function (ev) { ev.preventDefault(); elegirEmpresa(nombre); },
+          }, [forma(FORMA_CLUB[$('p1-club').value] || 'trama'), nombre]));
+        });
+        st.sugerencia = -1;
+        var hay = empresas.length > 0 && document.activeElement === $('p1-empresa');
+        mostrar(lista, hay);
+        $('p1-empresa').setAttribute('aria-expanded', String(hay));
+      }).catch(cerrarSugerencias);
+    }
+
+    function navegarSugerencias(ev) {
+      var lista = $('p1-sugerencias');
+      var items = todos('li', lista);
+      if (lista.hidden || !items.length) return;
+      if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+        ev.preventDefault();
+        st.sugerencia = (st.sugerencia + (ev.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+        items.forEach(function (li, i) { li.setAttribute('aria-selected', String(i === st.sugerencia)); });
+        $('p1-empresa').setAttribute('aria-activedescendant', items[st.sugerencia].id);
+      } else if (ev.key === 'Enter' && st.sugerencia >= 0) {
+        ev.preventDefault();
+        elegirEmpresa(items[st.sugerencia].getAttribute('data-valor'));
+      } else if (ev.key === 'Escape') {
+        cerrarSugerencias();
+      }
+    }
+
+    function elegirEmpresa(nombre) {
+      $('p1-empresa').value = nombre;
+      cerrarSugerencias();
+      consultarEmpresa();
+    }
+
+    function limpiarInfo() {
+      st.info = null;
+      mostrar($('chip-existente'), false);
+      mostrar($('chip-nueva'), false);
+      $('p1-empresa-estado').textContent = '';
+      actualizarProcesar();
+    }
+
+    // Indica si la empresa es existente (se va a actualizar) o nueva (se va a crear).
+    function consultarEmpresa() {
+      var empresa = $('p1-empresa').value.trim();
+      if (!empresa) return;
+      var n = ++st.seq.info;
+      llamar('infoEmpresa', $('p1-club').value, empresa).then(function (info) {
+        if (n !== st.seq.info) return;
+        st.info = info;
+        mostrar($('chip-existente'), info.existe);
+        mostrar($('chip-nueva'), !info.existe);
+        $('p1-empresa-estado').textContent = info.existe
+          ? 'Estado actual: ' + (info.estadoActual || 'sin estado') + '. Se va a actualizar.'
+          : 'No está en el CRM: se va a crear.';
+        actualizarProcesar();
+      }).catch(function (e) { error('p1-error', msg(e)); });
+    }
+
+    function actualizarProcesar() {
+      $('p1-procesar').disabled = !($('p1-empresa').value.trim() && $('p1-notas').value.trim().length >= MIN_NOTAS);
+    }
+
+    function procesar() {
+      if ($('p1-procesar').disabled) return;
+      error('p1-error', '');
+      var s = { club: $('p1-club').value, empresa: $('p1-empresa').value.trim(), fechaReunion: $('p1-fecha').value, notas: $('p1-notas').value };
+      if (!s.fechaReunion) { error('p1-error', 'Falta la fecha de la reunión.'); return; }
+      $('p1-procesar').disabled = true;
+      mostrar($('p1-loader'), true);
+      llamar('procesarNotas', s).then(function (r) {
+        st.solicitud = s;
+        st.resultado = r;
+        mostrarPaso2(r);
+      }).catch(function (e) { error('p1-error', msg(e)); }).then(function () {
+        mostrar($('p1-loader'), false);
+        actualizarProcesar();
+      });
+    }
+
+    // ---------- A5: paso 2 ----------
+    var programarPreview = debounce(actualizarPreview, 500);
+
+    function iniciarPaso2() {
+      $('paso2').addEventListener('input', alEditar);
+      $('paso2').addEventListener('change', alEditar);
+      todos('.lista-editable .agregar').forEach(function (b) {
+        b.addEventListener('click', function () { agregarItem(b.parentNode.querySelector('.items'), '').focus(); });
+      });
+      $('p2-volver').addEventListener('click', function () { irA('paso1'); });
+      $('p2-confirmar').addEventListener('click', confirmar);
+      $('exito-reintentar').addEventListener('click', reintentar);
+      $('exito-otro').addEventListener('click', function () {
+        $('p1-empresa').value = '';
+        $('p1-notas').value = '';
+        $('p1-fecha').value = st.ctx.hoy;
+        actualizarContador();
+        limpiarInfo();
+        irA('paso1');
+      });
+    }
+
+    function irA(vista) {
+      mostrar($('paso1'), vista === 'paso1');
+      mostrar($('paso2'), vista === 'paso2');
+      mostrar($('exito'), vista === 'exito');
+      $('panel-carga').scrollIntoView({ block: 'start' });
+    }
+
+    function agregarItem(contenedor, texto) {
+      var input = el('input', { clase: 'control', value: texto });
+      var fila = el('div', { clase: 'item' }, [
+        input,
+        el('button', { type: 'button', clase: 'btn btn--secundario btn--chico', title: 'Quitar', 'aria-label': 'Quitar', texto: '×', onclick: function () { fila.remove(); programarPreview(); } }),
+      ]);
+      contenedor.appendChild(fila);
+      return input;
+    }
+
+    function leerLista(nombre) {
+      var inputs = document.querySelectorAll('[data-lista="' + nombre + '"] .items input');
+      return Array.prototype.map.call(inputs, function (i) { return i.value.trim(); }).filter(function (v) { return v !== ''; });
+    }
+
+    function mostrarPaso2(r) {
+      var x = r.extraccion;
+      CAMPOS_TEXTO.forEach(function (c) { $('p2-' + c).value = x[c] || ''; });
+
+      // Estados posibles al cargar un post-reunión. Viene preseleccionado "Reunión coordinada", salvo que
+      // Gemini haya detectado Tratativas o un estado final (ver estadoPreseleccionado en validacion.ts).
+      var sel = $('p2-estado');
+      sel.innerHTML = '';
+      r.estados.forEach(function (e) { sel.appendChild(el('option', { value: e, texto: e })); });
+      sel.value = r.estados.indexOf(x.estadoSugerido) >= 0 ? x.estadoSugerido : r.estados[0];
+
+      ['compromisosEmpresa', 'compromisosTrama'].forEach(function (n) {
+        var cont = document.querySelector('[data-lista="' + n + '"] .items');
+        cont.innerHTML = '';
+        x[n].forEach(function (t) { agregarItem(cont, t); });
+      });
+
+      // Campos faltantes resaltados en amarillo.
+      todos('#paso2 [data-campo]').forEach(function (campo) {
+        campo.classList.toggle('faltante', x.camposFaltantes.indexOf(campo.getAttribute('data-campo')) >= 0);
+      });
+
+      var resumen = $('p2-resumen-empresa');
+      resumen.innerHTML = '';
+      resumen.appendChild(document.createTextNode(st.solicitud.empresa + ' · ' + st.solicitud.club + ' · reunión del ' + fechaLegible(st.solicitud.fechaReunion) + ' · '));
+      if (r.empresa.existe) {
+        resumen.appendChild(document.createTextNode('estado actual: '));
+        resumen.appendChild(el('span', { clase: 'estado', 'data-estado': r.empresa.estadoActual || '', texto: r.empresa.estadoActual || 'sin estado' }));
+      } else {
+        resumen.appendChild(document.createTextNode('empresa nueva'));
+      }
+      error('p2-error-extraccion', r.error || '');
+      $('p2-previos').textContent = r.empresa.comentarios || '';
+      mostrar($('p2-previos-caja'), !!r.empresa.comentarios);
+
+      error('p2-error', '');
+      $('p2-confirmar').disabled = false;
+      irA('paso2');
+      cargarAdjuntos();
+      actualizarPreview();
+    }
+
+    function cargarAdjuntos() {
+      var cont = $('p2-adjuntos');
+      cont.classList.add('muted');
+      cont.textContent = 'Cargando…';
+      llamar('listarAdjuntos', st.solicitud.club).then(function (archivos) {
+        cont.innerHTML = '';
+        if (!archivos.length) { cont.textContent = 'No hay archivos en la carpeta del club.'; return; }
+        cont.classList.remove('muted');
+        archivos.forEach(function (a) {
+          cont.appendChild(el('label', { clase: 'adjunto' }, [el('input', { type: 'checkbox', value: a.id }), a.nombre]));
+        });
+      }).catch(function (e) { cont.textContent = 'No se pudieron cargar los archivos: ' + msg(e); });
+    }
+
+    function alEditar(ev) {
+      var campo = ev && ev.target && ev.target.closest && ev.target.closest('[data-campo]');
+      if (campo && ev.target.value && ev.target.value.trim() !== '') campo.classList.remove('faltante');
+      programarPreview();
+    }
+
+    function leerFormulario() {
+      var x = st.resultado.extraccion;
+      var datos = {
+        persona: valor('p2-persona'),
+        rolPersona: valor('p2-rolPersona'),
+        mail: valor('p2-mail'),
+        telefono: valor('p2-telefono'),
+        linkedin: valor('p2-linkedin'),
+        compromisosEmpresa: leerLista('compromisosEmpresa'),
+        compromisosTrama: leerLista('compromisosTrama'),
+        parrafoCompromisos: valor('p2-parrafoCompromisos'),
+        estadoSugerido: $('p2-estado').value || x.estadoSugerido,
+        comentarios: $('p2-comentarios').value.trim(),
+        proximaAccion: valor('p2-proximaAccion'),
+        fechaProximaAccion: valor('p2-fechaProximaAccion'),
+        camposFaltantes: [],
+      };
+      datos.camposFaltantes = x.camposFaltantes.filter(function (c) { return datos[c] === null; });
+      return {
+        club: st.solicitud.club,
+        empresa: st.solicitud.empresa,
+        fechaReunion: st.solicitud.fechaReunion,
+        datos: datos,
+        adjuntosExtra: Array.prototype.map.call(document.querySelectorAll('#p2-adjuntos input:checked'), function (i) { return i.value; }),
+      };
+    }
+
+    // Vista previa con MailService.previsualizar; se actualiza al editar.
+    function actualizarPreview() {
+      if (!st.resultado) return;
+      var n = ++st.seq.preview;
+      $('p2-preview-estado').textContent = 'Actualizando…';
+      llamar('previsualizarMail', leerFormulario()).then(function (html) {
+        if (n !== st.seq.preview) return;
+        $('p2-preview').srcdoc = html;
+        $('p2-preview-estado').textContent = '';
+      }).catch(function (e) {
+        if (n !== st.seq.preview) return;
+        $('p2-preview').srcdoc = '';
+        $('p2-preview-estado').textContent = 'No se pudo generar la vista previa. ' + msg(e);
+      });
+    }
+
+    // No se puede confirmar con un estado inválido ni sin mail del contacto (se valida otra vez en el servidor).
+    function validar(p) {
+      var errores = [];
+      if (!$('p2-estado').value) errores.push('Elegí un estado válido.');
+      if (!p.datos.mail) errores.push('Falta el mail del contacto.');
+      else if (!MAIL_RE.test(p.datos.mail)) errores.push('El mail del contacto no es válido.');
+      if (p.datos.fechaProximaAccion && p.datos.fechaProximaAccion < p.fechaReunion) errores.push('La fecha de próxima acción no puede ser anterior a la reunión.');
+      return errores;
+    }
+
+    // ---------- A6: confirmar ----------
+    function confirmar() {
+      var p = leerFormulario();
+      var errores = validar(p);
+      if (errores.length) { error('p2-error', errores.join(' ')); return; }
+      error('p2-error', '');
+      $('p2-confirmar').disabled = true; // un doble clic no manda dos veces
+      mostrar($('p2-loader'), true);
+      llamar('confirmarPostReunion', p).then(function (r) {
+        st.ultimo = p;
+        mostrarResultado(r);
+      }).catch(function (e) {
+        error('p2-error', msg(e));
+        $('p2-confirmar').disabled = false;
+      }).then(function () { mostrar($('p2-loader'), false); });
+    }
+
+    function mostrarResultado(r) {
+      if (!r.ok && r.fallo !== 'BORRADOR') {
+        error('p2-error', r.mensaje);
+        $('p2-confirmar').disabled = false;
+        irA('paso2');
+        return;
+      }
+      $('exito-titulo').textContent = r.ok ? 'Listo' : 'Falta el borrador';
+      $('exito-mensaje').textContent = r.ok ? 'Se actualizó el CRM y quedó el borrador en tu Gmail.' : r.mensaje;
+      if (r.filaUrl) $('exito-fila').href = r.filaUrl;
+      mostrar($('exito-fila'), !!r.filaUrl);
+      if (r.borradorUrl) $('exito-borrador').href = r.borradorUrl;
+      mostrar($('exito-borrador'), !!r.borradorUrl);
+      mostrar($('exito-reintentar'), r.fallo === 'BORRADOR');
+      $('exito-reintentar').disabled = false;
+      irA('exito');
+    }
+
+    function reintentar() {
+      $('exito-reintentar').disabled = true;
+      $('exito-mensaje').textContent = 'Creando el borrador…';
+      llamar('reintentarBorrador', st.ultimo).then(mostrarResultado).catch(function (e) {
+        $('exito-mensaje').textContent = 'No se pudo crear el borrador: ' + msg(e);
+        $('exito-reintentar').disabled = false;
+      });
+    }
+
+    // ---------- A7: mis seguimientos ----------
+    function iniciarSeguimientos() {
+      todos('.filtro').forEach(function (b) {
+        b.addEventListener('click', function () {
+          st.filtro = b.getAttribute('data-filtro');
+          todos('.filtro').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+          renderSeguimientos();
+        });
+      });
+    }
+
+    function cargarSeguimientos() {
+      error('seg-error', '');
+      mostrar($('seg-mensaje'), !st.seguimientos.length);
+      llamar('listarSeguimientos').then(function (lista) {
+        st.seguimientos = lista;
+        renderSeguimientos();
+      }).catch(function (e) {
+        error('seg-error', msg(e));
+      }).then(function () { mostrar($('seg-mensaje'), false); });
+    }
+
+    function ordenar(a, b) {
+      if (a.fechaProximaAccion === b.fechaProximaAccion) return 0;
+      if (a.fechaProximaAccion === null) return 1;
+      if (b.fechaProximaAccion === null) return -1;
+      return a.fechaProximaAccion < b.fechaProximaAccion ? -1 : 1;
+    }
+
+    function renderSeguimientos() {
+      var abiertos = st.seguimientos.filter(function (s) { return s.estadosValidos.length > 0; }).sort(ordenar); // sin estados finales
+      var vencidos = abiertos.filter(function (s) { return s.vencida; }).length;
+      var cuenta = document.querySelector('[data-cuenta-seg]');
+      cuenta.textContent = String(vencidos);
+      cuenta.title = vencidos + ' vencidos';
+      mostrar(cuenta, vencidos > 0);
+
+      var lista = abiertos.filter(function (s) {
+        if (st.filtro === 'vencidos') return s.vencida;
+        if (st.filtro === 'semana') { var d = diasHasta(s.fechaProximaAccion); return d >= 0 && d <= 7; }
+        return true;
+      });
+      var ul = $('lista-seguimientos');
+      ul.innerHTML = '';
+      lista.forEach(function (s) { ul.appendChild(filaSeguimiento(s)); });
+      $('seg-vacio-texto').textContent = abiertos.length
+        ? 'No hay seguimientos con este filtro.'
+        : 'No tenés seguimientos abiertos. Cuando cargues una reunión, aparece acá.';
+      mostrar($('seg-vacio'), lista.length === 0);
+    }
+
+    function filaSeguimiento(s) {
+      var dias = diasHasta(s.fechaProximaAccion);
+      var cuando = s.vencida ? ' · hace ' + (-dias) + (dias === -1 ? ' día' : ' días')
+        : dias === 0 ? ' · hoy' : dias === 1 ? ' · mañana' : '';
+      var p = Math.min(3, s.pingueosSinRespuesta || 0);
+      var puntos = [0, 1, 2].map(function (i) { return el('i', { clase: i < p ? 'on' : '' }); });
+
+      var li = el('li', { clase: 'seg ' + (s.vencida ? 'vencido' : dias <= 2 ? 'proximo' : '') }, [
+        el('span', { clase: 'franja' }),
+        el('div', {}, [
+          el('div', { style: 'display:flex;gap:10px;align-items:center;flex-wrap:wrap' }, [
+            el('span', { clase: 'empresa', texto: s.empresa }),
+            el('span', { clase: 'estado', 'data-estado': s.estado || '', texto: s.estado || 'Sin estado' }),
+          ]),
+          el('div', { clase: 'detalle' }, [
+            el('span', { texto: s.proximaAccion || 'Sin próxima acción' }),
+            el('span', { clase: 'fecha', texto: fechaCorta(s.fechaProximaAccion) + cuando }),
+            el('span', { clase: 'pingueos', title: (s.pingueosSinRespuesta || 0) + ' pingueos sin respuesta' }, puntos),
+          ]),
+        ]),
+        el('div', { clase: 'botones' }, [
+          el('button', {
+            type: 'button', clase: 'btn btn--primario btn--chico',
+            texto: s.borradorUrl ? 'Generar otro borrador' : 'Generar borrador de pingueo',
+            onclick: function () { generarPingueo(li, s); },
+          }),
+          s.borradorUrl
+            ? el('a', { clase: 'btn btn--secundario btn--chico', href: s.borradorUrl, target: '_blank', rel: 'noopener', texto: 'Ver borrador' })
+            : null,
+        ]),
+      ]);
+      return li;
+    }
+
+    // Genera el borrador de pingueo (A elige el template según el estado, ver app/webapp.ts) y
+    // recién si eso sale bien registra el pingueo en el CRM. El link al borrador se guarda en el
+    // propio seguimiento para poder mostrarlo en la fila sin recargar la página.
+    function generarPingueo(li, s) {
+      error('seg-error', '');
+      var botones = todos('button', li);
+      botones.forEach(function (b) { b.disabled = true; });
+      llamar('registrarPingueo', s.club, s.empresa).then(function (r) {
+        var actualizado = Object.assign({}, r.seguimiento, { borradorUrl: r.borradorUrl });
+        st.seguimientos = st.seguimientos.map(function (x) { return x.club === s.club && x.empresa === s.empresa ? actualizado : x; });
+        renderSeguimientos();
+      }).catch(function (e) {
+        error('seg-error', s.empresa + ': ' + msg(e));
+        botones.forEach(function (b) { b.disabled = false; });
+      });
+    }
+
+    iniciar();
+  })();
+</script>

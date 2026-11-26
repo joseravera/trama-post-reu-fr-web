@@ -5,11 +5,13 @@ import type { Estado } from '../shared/types';
 
 export const TRANSICIONES: Record<Estado, Estado[]> = {
   'Mail enviado': ['Mail respondido', 'Reunión coordinada', 'No va a ser sponsor'],
-  'Mail respondido': ['Reunión coordinada', 'No va a ser sponsor'],
+  // "Mail enviado": el FR le volvió a escribir (lo cambia a mano).
+  'Mail respondido': ['Mail enviado', 'Reunión coordinada', 'No va a ser sponsor'],
   'FR viejo mando el mail de traspaso': ['Respondió traspaso', 'Reunión coordinada', 'No va a ser sponsor'],
   'Respondió traspaso': ['Mail enviado', 'Reunión coordinada', 'No va a ser sponsor'],
   'Reunión coordinada': ['Tuvimos reunión, esperando respuesta', 'Tratativas', 'No va a ser sponsor'],
   'Tuvimos reunión, esperando respuesta': [
+    'Mail respondido', // la empresa respondió el mail post-reunión
     'Tratativas',
     'Va a ser sponsor',
     'No va a ser sponsor',
@@ -37,6 +39,7 @@ export const ESTADOS_INICIALES: Estado[] = [
 export const ESTADO_AL_RESPONDER: Partial<Record<Estado, Estado>> = {
   'Mail enviado': 'Mail respondido',
   'FR viejo mando el mail de traspaso': 'Respondió traspaso',
+  'Tuvimos reunión, esperando respuesta': 'Mail respondido',
 };
 
 export function estadoAlResponder(estado: Estado | undefined): Estado | undefined {

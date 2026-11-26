@@ -81,3 +81,14 @@ describe('estadoAlMandarResumen', () => {
     expect(estadoAlMandarResumen('Mail enviado')).toBe('Mail enviado');
   });
 });
+
+describe('respuestas después de la reunión y nuevo mail del FR', () => {
+  it('Tuvimos reunión → Mail respondido (a mano y cuando la empresa responde el mail post-reunión)', () => {
+    expect(transicionValida('Tuvimos reunión, esperando respuesta', 'Mail respondido')).toBe(true);
+    expect(estadoAlResponder('Tuvimos reunión, esperando respuesta')).toBe('Mail respondido');
+  });
+
+  it('Mail respondido → Mail enviado (el FR le vuelve a escribir)', () => {
+    expect(transicionValida('Mail respondido', 'Mail enviado')).toBe(true);
+  });
+});

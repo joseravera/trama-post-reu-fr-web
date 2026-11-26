@@ -68,28 +68,12 @@ function evaluarPinguear(fila: FilaCRM, ahora: Date, parametros: ParametrosRegla
       `Pingueá a ${fila.empresa}: el FR anterior mandó el mail de traspaso hace ${dias} días y no respondieron.`,
     );
   }
-  if (fila.estado === 'Respondió traspaso' && dias >= parametros.diasCoordinar) {
-    return avisoParaFr(
-      'PINGUEAR',
-      fila,
-      ahora,
-      `Pingueá a ${fila.empresa} para coordinar la reunión: respondieron el traspaso hace ${dias} días y no se coordinó nada.`,
-    );
-  }
   if (fila.estado === 'Mail enviado' && dias >= parametros.diasPingueoMail) {
     return avisoParaFr(
       'PINGUEAR',
       fila,
       ahora,
       `Pingueá a ${fila.empresa}: mandaste el mail hace ${dias} días y no respondieron.`,
-    );
-  }
-  if (fila.estado === 'Mail respondido' && dias >= parametros.diasCoordinar) {
-    return avisoParaFr(
-      'PINGUEAR',
-      fila,
-      ahora,
-      `Pingueá a ${fila.empresa} para coordinar la reunión: respondieron hace ${dias} días y no se coordinó nada.`,
     );
   }
   return null;
@@ -125,6 +109,24 @@ function evaluarSeguimientoVencido(fila: FilaCRM, ahora: Date, parametros: Param
   );
 }
 
+// La empresa respondió ("Mail respondido" o "Respondió traspaso") y pasaron DIAS_COORDINAR días
+// sin contacto (ni de ellos ni nuestro): hay que seguirla para coordinar la reunión. Es un
+// seguimiento, no un pingueo (la empresa sí respondió).
+function evaluarSeguimientoSinContacto(fila: FilaCRM, ahora: Date, parametros: ParametrosReglas): Aviso | null {
+  if (fila.estado !== 'Mail respondido' && fila.estado !== 'Respondió traspaso') return null;
+  const ultimoContacto = fila.fechaUltimoContacto ?? fila.fechaPrimerContacto;
+  if (!ultimoContacto) return null;
+  const dias = diferenciaDiasEnZona(ultimoContacto, ahora);
+  if (dias < parametros.diasCoordinar) return null;
+  const que = fila.estado === 'Respondió traspaso' ? 'respondieron el traspaso' : 'respondieron';
+  return avisoParaFr(
+    'SEGUIMIENTO_VENCIDO',
+    fila,
+    ahora,
+    `Seguí a ${fila.empresa}: ${que} y pasaron ${dias} días sin contacto.`,
+  );
+}
+
 // FilaCRM no distingue si la "próxima acción" es un compromiso de Trama o una tarea genérica
 // del FR (A6: los compromisos de Trama se cargan ahí mismo). Para no duplicar el aviso de
 // SEGUIMIENTO_VENCIDO, esta regla solo mira los estados que esa otra regla no cubre.
@@ -155,6 +157,7 @@ export function evaluarReglas(filas: FilaCRM[], ahora: Date, parametros: Paramet
       evaluarCargarPostReunion(fila, ahora, parametros),
       evaluarPinguear(fila, ahora, parametros),
       evaluarSeguimientoVencido(fila, ahora, parametros),
+      evaluarSeguimientoSinContacto(fila, ahora, parametros),
       evaluarCompromisoTrama(fila, ahora, parametros),
     ]) {
       if (aviso) avisos.push(aviso);

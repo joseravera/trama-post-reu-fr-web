@@ -3,6 +3,7 @@
 // igual que el servicio final.
 
 import { estadoAlEscribirEncargado, estadoAlMandarResumen, estadoAlResponder, transicionValida as transicionValidaReal } from '../../src/crm/maquinaEstados';
+import { agregarMails } from '../../src/shared/mails';
 import type {
   Club,
   CrmService,
@@ -89,13 +90,25 @@ export function crearFakeCrmService(filasIniciales: FilaCRM[] = []): CrmService 
       eventos.push({ timestamp: new Date(), club, empresa, fr: fr.nombre, tipo: 'PINGUEO', origen });
       return fila;
     },
-    registrarRespuesta(club, empresa, fr, origen = 'UI', fecha) {
+    registrarRespuesta(club, empresa, fr, origen = 'UI', fecha, cambiarEstado = true) {
       const fila = filas.get(clave(club, empresa));
       if (!fila) throw new Error('Empresa no encontrada');
       fila.pingueosSinRespuesta = 0;
-      fila.estado = estadoAlResponder(fila.estado);
+      if (cambiarEstado) fila.estado = estadoAlResponder(fila.estado);
       fila.fechaUltimoContacto = fecha ?? new Date();
       eventos.push({ timestamp: new Date(), club, empresa, fr: fr.nombre, tipo: 'RESPUESTA', origen });
+      return fila;
+    },
+    agregarMailsContacto(club, empresa, mails) {
+      const fila = filas.get(clave(club, empresa));
+      if (!fila) throw new Error('Empresa no encontrada');
+      fila.mail = agregarMails(fila.mail, mails.join(', ')) ?? undefined;
+      return fila;
+    },
+    registrarContactoNuestro(club, empresa, _fr, fecha) {
+      const fila = filas.get(clave(club, empresa));
+      if (!fila) throw new Error('Empresa no encontrada');
+      if (!fila.fechaUltimoContacto || fila.fechaUltimoContacto < fecha) fila.fechaUltimoContacto = fecha;
       return fila;
     },
     registrarMailDelEncargado(club, empresa, fr, fecha) {

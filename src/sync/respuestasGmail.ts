@@ -7,7 +7,11 @@
 //    reconoce por el hilo de Gmail del borrador): registrarPingueo → suma uno al contador.
 // 1. Si la empresa escribió (desde cualquiera de los mails de la celda "Mail"): registrarRespuesta
 //    → "Mail enviado" pasa a "Mail respondido" y "FR viejo mando el mail de traspaso" a
-//    "Respondió traspaso" (ESTADO_AL_RESPONDER en crm/maquinaEstados.ts).
+//    "Respondió traspaso" (ESTADO_AL_RESPONDER en crm/maquinaEstados.ts). El estado solo cambia si
+//    la respuesta es posterior a nuestro último mail a la empresa (respuestaCambiaEstado); si no,
+//    solo se registra (pingueos en 0 y fecha).
+//    Además, si está en "Mail enviado" o "Mail respondido" y alguien de Trama le escribió después
+//    de "Fecha último contacto" (por ejemplo un mail programado), se actualiza esa fecha.
 // 2. Si está en "Respondió traspaso" y el tramero encargado le escribió a la empresa después de
 //    esa respuesta (se ve en la casilla del encargado o en la de un coordinador/codirectora que
 //    estaba en copia): registrarMailDelEncargado → "Mail enviado".
@@ -15,18 +19,26 @@
 //    la casilla de este usuario (por el hilo, igual que el pingueo): registrarResumenEnviado →
 //    "Tuvimos reunión, esperando respuesta".
 // Todos los casos quedan en _Historial con origen GMAIL.
+//
+// La empresa se reconoce por los mails de su celda o por su dominio propio (crearEsDeLaEmpresa en
+// shared/mails.ts; no aplica a gmail.com, hotmail.com, etc.). Las direcciones nuevas de la empresa
+// que aparecen en los mails (De, Para o CC) se suman a la celda Mail.
 
 import { esEstadoFinal } from '../crm/maquinaEstados';
 import { crearConfigService } from '../crm/config';
 import { crearCrmService } from '../crm/repo';
+import { crearEsDeLaEmpresa } from '../shared/mails';
 import { mismoNombre } from '../shared/nombres';
 import type { Club, FilaCRM } from '../shared/types';
 import {
   consultaEnviosA,
+  consultaMailsA,
   consultaRespuestas,
+  respuestaCambiaEstado,
   esPosterior,
   evaluarTraspaso,
   extraerMails,
+  mailsNuevosDeLaEmpresa,
   type MensajeSimple,
   ultimaFecha,
 } from './mailsContacto';
@@ -84,24 +96,53 @@ export function sincronizarRespuestasGmail(): void {
       if (!fila.estado || esEstadoFinal(fila.estado)) continue;
       const mailsEmpresa = extraerMails(fila.mail);
       if (mailsEmpresa.length === 0) continue;
+      const esEmpresa = crearEsDeLaEmpresa(mailsEmpresa, mailsTrama);
+
+      // Todos los mensajes que se miran para esta empresa (para sumar contactos nuevos al final).
+      const vistos: MensajeSimple[] = [];
+      const buscar = (consulta: string): MensajeSimple[] => {
+        const mensajes = buscarMensajes(consulta);
+        vistos.push(...mensajes);
+        return mensajes;
+      };
 
       let actual: FilaCRM = fila;
 
       // 0. ¿Se mandó un borrador de pingueo que creó la app?
       const hiloPingueo = leerBorradorPendiente('PINGUEO', club, fila.empresa);
       if (hiloPingueo) {
-        const enviado = ultimaFecha(enviadosDelHilo(hiloPingueo), mailsTrama, mailsEmpresa);
+        const enviado = ultimaFecha(enviadosDelHilo(hiloPingueo), mailsTrama, esEmpresa);
         if (enviado) {
           actual = crm.registrarPingueo(club, fila.empresa, usuario, enviado, 'GMAIL');
           borrarBorradorPendiente('PINGUEO', club, fila.empresa);
         }
       }
 
+      // Último mail de alguien de Trama a la empresa (se busca solo si hace falta).
+      let ultimoNuestroCache: Date | null | undefined;
+      const ultimoNuestro = (): Date | null => {
+        if (ultimoNuestroCache === undefined) {
+          const consultaNuestros = consultaMailsA(mailsEmpresa, DIAS_VENTANA_ENCARGADO);
+          ultimoNuestroCache = consultaNuestros ? ultimaFecha(buscar(consultaNuestros), mailsTrama, esEmpresa) : null;
+        }
+        return ultimoNuestroCache;
+      };
+
       // 1. ¿Escribió la empresa?
       const consulta = consultaRespuestas(mailsEmpresa, DIAS_VENTANA);
-      const respuesta = consulta ? ultimaFecha(buscarMensajes(consulta), mailsEmpresa) : null;
+      const respuesta = consulta ? ultimaFecha(buscar(consulta), esEmpresa) : null;
       if (respuesta && esPosterior(respuesta, actual.fechaUltimoContacto)) {
-        actual = crm.registrarRespuesta(club, fila.empresa, usuario, 'GMAIL', respuesta);
+        const cambia = respuestaCambiaEstado(actual.estado, respuesta, ultimoNuestro());
+        actual = crm.registrarRespuesta(club, fila.empresa, usuario, 'GMAIL', respuesta, cambia);
+      }
+
+      // 1b. "Mail enviado" / "Mail respondido": si le escribimos después de "Fecha último
+      // contacto", se actualiza (así "X días sin contacto" cuenta también nuestros mails).
+      if (actual.estado === 'Mail enviado' || actual.estado === 'Mail respondido') {
+        const nuestro = ultimoNuestro();
+        if (nuestro && esPosterior(nuestro, actual.fechaUltimoContacto)) {
+          actual = crm.registrarContactoNuestro(club, fila.empresa, usuario, nuestro);
+        }
       }
 
       // 2. ¿Le contestó el encargado después de que respondieran el traspaso?
@@ -109,13 +150,13 @@ export function sincronizarRespuestasGmail(): void {
         const mailEncargado = usuarios.find((u) => mismoNombre(u.nombre, actual.trameroEncargado))?.mail;
         const consultaEncargado = mailEncargado ? consultaEnviosA(mailEncargado, mailsEmpresa, DIAS_VENTANA_ENCARGADO) : null;
         const envio = consultaEncargado && mailEncargado
-          ? ultimaFecha(buscarMensajes(consultaEncargado), [mailEncargado], mailsEmpresa)
+          ? ultimaFecha(buscar(consultaEncargado), [mailEncargado], esEmpresa)
           : null;
         if (envio) {
           const consultaEmpresa = consultaRespuestas(mailsEmpresa, DIAS_VENTANA_ENCARGADO);
           const fechasEmpresa = consultaEmpresa
-            ? buscarMensajes(consultaEmpresa)
-              .filter((m) => extraerMails(m.de).some((x) => mailsEmpresa.includes(x)))
+            ? buscar(consultaEmpresa)
+              .filter((m) => extraerMails(m.de).some(esEmpresa))
               .map((m) => m.fecha)
             : [];
           const { mailEnviado, respuestaPosterior } = evaluarTraspaso(envio, fechasEmpresa, actual.fechaUltimoContacto);
@@ -135,13 +176,17 @@ export function sincronizarRespuestasGmail(): void {
         if (actual.estado !== 'Reunión coordinada') {
           borrarBorradorPendiente('POST_REUNION', club, fila.empresa); // el estado ya avanzó por otro lado
         } else {
-          const enviado = ultimaFecha(enviadosDelHilo(hiloResumen), mailsTrama, mailsEmpresa);
+          const enviado = ultimaFecha(enviadosDelHilo(hiloResumen), mailsTrama, esEmpresa);
           if (enviado) {
             crm.registrarResumenEnviado(club, fila.empresa, usuario, enviado);
             borrarBorradorPendiente('POST_REUNION', club, fila.empresa);
           }
         }
       }
+
+      // 4. Gente nueva de la empresa en los mails (De, Para o CC): se suma a la celda Mail.
+      const nuevos = mailsNuevosDeLaEmpresa(vistos, esEmpresa, mailsEmpresa);
+      if (nuevos.length) crm.agregarMailsContacto(club, fila.empresa, nuevos);
     }
   }
 }

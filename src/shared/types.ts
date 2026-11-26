@@ -131,7 +131,14 @@ export interface CrmService { // B
   // tocado el FR a mano (A7 sigue llamando esto igual que antes, sin pasar nada).
   // ⚠️ Parámetro nuevo en el contrato: avisar a A y C antes de mergear (regla de la sección 3.6).
   // `fecha`: cuándo llegó la respuesta (el sync de Gmail pasa la del mensaje); si no viene, ahora.
-  registrarRespuesta(club: Club, empresa: string, fr: Usuario, origen?: Evento['origen'], fecha?: Date): FilaCRM;
+  // `cambiarEstado` = false: registra la respuesta (pingueos en 0, fecha) sin cambiar el estado
+  // (el sync lo usa cuando la respuesta es anterior a nuestro último mail).
+  registrarRespuesta(club: Club, empresa: string, fr: Usuario, origen?: Evento['origen'], fecha?: Date, cambiarEstado?: boolean): FilaCRM;
+  // Alguien de Trama le escribió a la empresa en `fecha`: solo actualiza "Fecha último contacto"
+  // (si es posterior a la que había). No cambia el estado ni registra evento.
+  registrarContactoNuestro(club: Club, empresa: string, fr: Usuario, fecha: Date): FilaCRM;
+  // Suma a la celda Mail direcciones nuevas de la empresa (sin borrar ni repetir las que había).
+  agregarMailsContacto(club: Club, empresa: string, mails: string[]): FilaCRM;
   // El tramero encargado le escribió a la empresa en `fecha` (lo detecta el sync de Gmail). Aplica
   // ESTADO_AL_ESCRIBIR_ENCARGADO ("Respondió traspaso" → "Mail enviado"); si el estado no está en
   // esa tabla, no hace nada.

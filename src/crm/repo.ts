@@ -388,14 +388,14 @@ export function crearCrmService(): CrmService {
       }
     },
 
-    registrarRespuesta(club, empresa, fr, origen = 'UI', fecha) {
+    registrarRespuesta(club, empresa, fr, origen = 'UI', fecha, cambiarEstado = true) {
       const lock = LockService.getScriptLock();
       lock.waitLock(30_000);
       try {
         const hoja = obtenerHojaClub(club);
         const { encabezados, valores } = leerTabla(hoja);
         const { numeroFila, fila } = requerirFila(club, empresa, encabezados, valores);
-        const nuevoEstado: Estado | undefined = estadoAlResponder(fila.estado);
+        const nuevoEstado: Estado | undefined = cambiarEstado ? estadoAlResponder(fila.estado) : fila.estado;
         const nuevaFila: FilaCRM = {
           ...fila,
           estado: nuevoEstado,
@@ -414,6 +414,39 @@ export function crearCrmService(): CrmService {
           estadoNuevo: nuevoEstado,
           origen,
         });
+        return nuevaFila;
+      } finally {
+        lock.releaseLock();
+      }
+    },
+
+    agregarMailsContacto(club, empresa, mails) {
+      const lock = LockService.getScriptLock();
+      lock.waitLock(30_000);
+      try {
+        const hoja = obtenerHojaClub(club);
+        const { encabezados, valores } = leerTabla(hoja);
+        const { numeroFila, fila } = requerirFila(club, empresa, encabezados, valores);
+        const mail = agregarMails(fila.mail, mails.join(', ')) ?? undefined;
+        if (mail === fila.mail) return fila;
+        const nuevaFila: FilaCRM = { ...fila, mail };
+        escribirFila(hoja, numeroFila, encabezados, nuevaFila);
+        return nuevaFila;
+      } finally {
+        lock.releaseLock();
+      }
+    },
+
+    registrarContactoNuestro(club, empresa, _fr, fecha) {
+      const lock = LockService.getScriptLock();
+      lock.waitLock(30_000);
+      try {
+        const hoja = obtenerHojaClub(club);
+        const { encabezados, valores } = leerTabla(hoja);
+        const { numeroFila, fila } = requerirFila(club, empresa, encabezados, valores);
+        if (fila.fechaUltimoContacto && fila.fechaUltimoContacto >= fecha) return fila;
+        const nuevaFila: FilaCRM = { ...fila, fechaUltimoContacto: fecha };
+        escribirFila(hoja, numeroFila, encabezados, nuevaFila);
         return nuevaFila;
       } finally {
         lock.releaseLock();

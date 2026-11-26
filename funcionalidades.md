@@ -107,17 +107,23 @@ Calendar y actualiza el CRM de su club:
 | Si pasa esto | La empresa pasa de… | …a |
 |---|---|---|
 | La empresa nos escribe | Mail enviado | Mail respondido |
+| La empresa responde el mail post-reunión | Tuvimos reunión, esperando respuesta | Mail respondido |
 | La empresa responde el mail de traspaso | FR viejo mando el mail de traspaso | Respondió traspaso |
 | El tramero encargado le escribe a la empresa después de que respondió el traspaso | Respondió traspaso | Mail enviado |
 | Mandás el borrador post-reunión que te dejó la app | Reunión coordinada | Tuvimos reunión, esperando respuesta |
 | Mandás el borrador de pingueo que te dejó la app | (no cambia el estado) | suma uno a "Pingueos sin respuesta" |
-| Hay un evento en tu Calendar con la empresa (por nombre en el título o por invitados con su dominio) | cualquier estado no final | Reunión coordinada (y carga la fecha del evento como próxima acción) |
+| El tramero encargado tiene en su Calendar (creado por él o invitado) un evento en los próximos 30 días con alguien de la empresa entre los invitados | cualquier estado no final | Reunión coordinada (y carga la fecha del evento como próxima acción) |
 
 En los otros casos de mail, los pingueos vuelven a 0. En todos se actualiza "Fecha último contacto".
 
 Para que esto funcione:
 - El mail de la empresa tiene que estar en la columna **Mail**. Si hay varios contactos, podés
   poner varios mails en la misma celda (separados por coma, punto y coma, barra o renglón).
+- Con al menos un mail cargado alcanza: la app reconoce a la empresa también por su dominio
+  (por ejemplo, cualquier `@despegar.com`). Si en los mails aparece gente nueva de la empresa (que
+  escribe, o que sumaron como destinatario o en copia), **se agrega sola a la columna Mail**. Esto
+  no aplica a mails personales (gmail.com, hotmail.com, etc.) ni a direcciones automáticas como
+  no-reply@…
 - El mail tiene que llegarle a alguien que ya entró a la app: al encargado, o a un coordinador
   o codirectora que esté **en copia**. Si la empresa le responde solo al FR del año pasado, la app
   no lo ve y hay que cambiar el estado a mano.
@@ -132,11 +138,11 @@ planilla, para que cuenten en el resumen semanal.
 | Estado | Puede pasar a |
 |---|---|
 | Mail enviado | Mail respondido, Reunión coordinada, No va a ser sponsor |
-| Mail respondido | Reunión coordinada, No va a ser sponsor |
+| Mail respondido | Mail enviado (si le volvés a escribir, a mano), Reunión coordinada, No va a ser sponsor |
 | FR viejo mando el mail de traspaso | Respondió traspaso, Reunión coordinada, No va a ser sponsor |
 | Respondió traspaso | Mail enviado, Reunión coordinada, No va a ser sponsor |
 | Reunión coordinada | Tuvimos reunión, esperando respuesta · Tratativas · No va a ser sponsor |
-| Tuvimos reunión, esperando respuesta | Tratativas · Va a ser sponsor · No va a ser sponsor · Reunión coordinada |
+| Tuvimos reunión, esperando respuesta | Mail respondido · Tratativas · Va a ser sponsor · No va a ser sponsor · Reunión coordinada |
 | Tratativas | Va a ser sponsor · No va a ser sponsor · Reunión coordinada |
 | Va a ser sponsor | (final) |
 | No va a ser sponsor | (final) |
@@ -159,11 +165,13 @@ Los avisos los manda la app a la mañana (9:00). No son borradores: llegan a tu 
 **El mail semanal del FR** junta:
 - Post-reuniones sin cargar: la reunión ya pasó (más de 24 hs) y la empresa sigue en "Reunión
   coordinada".
-- Empresas para pinguear:
-  - "Mail enviado" o "FR viejo mando el mail de traspaso" sin respuesta hace 7 días o más.
-  - "Mail respondido" o "Respondió traspaso" sin reunión coordinada hace 3 días o más.
-- Seguimientos: empresas en "Tuvimos reunión…" o "Tratativas" con la próxima acción vencida o
-  que vence antes del lunes siguiente, o sin próxima acción y 7 días sin contacto.
+- Empresas para pinguear: "Mail enviado" o "FR viejo mando el mail de traspaso" sin respuesta
+  hace 7 días o más.
+- Seguimientos:
+  - "Mail respondido" o "Respondió traspaso" con 3 días o más sin contacto (ni de ellos ni
+    nuestro).
+  - "Tuvimos reunión…" o "Tratativas" con la próxima acción vencida o que vence antes del lunes
+    siguiente, o sin próxima acción y 7 días sin contacto.
 - Compromisos de Trama que vencen antes del lunes siguiente.
 
 **Escalamientos al coordinador** (se mandan una sola vez por empresa):

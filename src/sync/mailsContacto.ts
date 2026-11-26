@@ -1,15 +1,23 @@
 // Lógica pura para la celda "Mail" del CRM, que a veces tiene varias direcciones separadas por
 // coma, ";", "/", "y" o saltos de línea (ej. en los traspasos de Emprendedores).
 
-import { extraerMails } from '../shared/mails';
+import { dominiosEmpresa, extraerMails } from '../shared/mails';
+import type { Estado } from '../shared/types';
 
 export { extraerMails };
 
-// Consulta de Gmail para mails recibidos de cualquiera de esas direcciones en los últimos `dias`.
-// null si no hay ninguna dirección válida.
+// Términos de búsqueda para una empresa: sus mails y sus dominios propios (ver shared/mails.ts),
+// así también aparecen mails de personas nuevas de la empresa.
+function terminosEmpresa(mails: readonly string[]): string[] {
+  return [...mails, ...dominiosEmpresa(mails)];
+}
+
+// Consulta de Gmail para mails recibidos de la empresa (sus mails o su dominio) en los últimos
+// `dias`. null si no hay ninguna dirección válida.
 export function consultaRespuestas(mails: readonly string[], dias: number): string | null {
   if (mails.length === 0) return null;
-  const remitentes = mails.length === 1 ? mails[0] : `(${mails.join(' OR ')})`;
+  const terminos = terminosEmpresa(mails);
+  const remitentes = terminos.length === 1 ? terminos[0] : `(${terminos.join(' OR ')})`;
   return `from:${remitentes} newer_than:${dias}d`;
 }
 
@@ -18,7 +26,7 @@ export function consultaRespuestas(mails: readonly string[], dias: number): stri
 // de alguien que estaba en copia. Las llaves {…} son un OR en la búsqueda de Gmail.
 export function consultaEnviosA(remitente: string, destinatarios: readonly string[], dias: number): string | null {
   if (!remitente || destinatarios.length === 0) return null;
-  const para = destinatarios.map((m) => `to:${m} cc:${m}`).join(' ');
+  const para = terminosEmpresa(destinatarios).map((m) => `to:${m} cc:${m}`).join(' ');
   return `from:${remitente} {${para}} newer_than:${dias}d`;
 }
 
@@ -30,17 +38,24 @@ export interface MensajeSimple {
   fecha: Date;
 }
 
-// Fecha del mensaje más reciente cuyo remitente está en `remitentes` y, si se pasan
-// `destinatarios`, que tenga a alguno de ellos en Para o CC. null si no hay ninguno.
+// Lista de direcciones o función que dice si una dirección cuenta (ej. "es de la empresa").
+export type FiltroMails = readonly string[] | ((mail: string) => boolean);
+
+function cumple(filtro: FiltroMails, mail: string): boolean {
+  return typeof filtro === 'function' ? filtro(mail) : filtro.includes(mail);
+}
+
+// Fecha del mensaje más reciente cuyo remitente cumple `remitentes` y, si se pasan
+// `destinatarios`, que tenga a alguno que los cumpla en Para o CC. null si no hay ninguno.
 export function ultimaFecha(
   mensajes: readonly MensajeSimple[],
-  remitentes: readonly string[],
-  destinatarios?: readonly string[],
+  remitentes: FiltroMails,
+  destinatarios?: FiltroMails,
 ): Date | null {
   let ultima: Date | null = null;
   for (const m of mensajes) {
-    if (!extraerMails(m.de).some((x) => remitentes.includes(x))) continue;
-    if (destinatarios && !extraerMails(`${m.para} ${m.cc}`).some((x) => destinatarios.includes(x))) continue;
+    if (!extraerMails(m.de).some((x) => cumple(remitentes, x))) continue;
+    if (destinatarios && !extraerMails(`${m.para} ${m.cc}`).some((x) => cumple(destinatarios, x))) continue;
     if (!ultima || m.fecha > ultima) ultima = m.fecha;
   }
   return ultima;
@@ -74,4 +89,39 @@ export function evaluarTraspaso(
     ? posteriores.reduce((a, b) => (b > a ? b : a))
     : null;
   return { mailEnviado, respuestaPosterior };
+}
+
+// Consulta de Gmail para mails a cualquiera de `destinatarios` (Para o CC) en los últimos `dias`.
+// El sync después se queda con los que mandó alguien de Trama (nuestros mails a la empresa).
+export function consultaMailsA(destinatarios: readonly string[], dias: number): string | null {
+  if (destinatarios.length === 0) return null;
+  const para = terminosEmpresa(destinatarios).map((m) => `to:${m} cc:${m}`).join(' ');
+  return `{${para}} newer_than:${dias}d`;
+}
+
+// ¿Una respuesta de la empresa tiene que cambiar el estado? Solo si llegó después de nuestro último
+// mail: si nosotros escribimos después, la última palabra es nuestra (y una respuesta vieja, por
+// ejemplo al traspaso, no puede pasar un "Mail enviado" a "Mail respondido").
+// Excepción: en "FR viejo mando el mail de traspaso" el mail anterior es del FR del año pasado
+// (no está en _Usuarios), así que cualquier respuesta cuenta; si además el encargado ya contestó,
+// el paso siguiente del sync lo pasa a "Mail enviado".
+export function respuestaCambiaEstado(estado: Estado | undefined, respuesta: Date, ultimoNuestro: Date | null): boolean {
+  if (estado === 'FR viejo mando el mail de traspaso') return true;
+  return !ultimoNuestro || respuesta > ultimoNuestro;
+}
+
+// Direcciones de la empresa que aparecen (De, Para o CC) en `mensajes` y todavía no están en la
+// celda Mail. Se agregan a la celda para no perder a la gente nueva que suma la empresa.
+export function mailsNuevosDeLaEmpresa(
+  mensajes: readonly MensajeSimple[],
+  esDeLaEmpresa: (mail: string) => boolean,
+  conocidos: readonly string[],
+): string[] {
+  const nuevos = new Set<string>();
+  for (const m of mensajes) {
+    for (const mail of extraerMails(`${m.de} ${m.para} ${m.cc}`)) {
+      if (!conocidos.includes(mail) && esDeLaEmpresa(mail)) nuevos.add(mail);
+    }
+  }
+  return Array.from(nuevos);
 }

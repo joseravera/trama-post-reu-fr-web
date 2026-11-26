@@ -1,8 +1,7 @@
-// Dueño: Persona B. Lógica pura de matching para B5/B6 (asociar un evento de Calendar o un
-// remitente de Gmail a una empresa del CRM), separada de las llamadas a CalendarApp/GmailApp
-// para poder testearla con Jest.
+// Dueño: Persona B. Lógica pura de matching para B5 (asociar un evento de Calendar a una empresa
+// del CRM), separada de las llamadas a CalendarApp para poder testearla con Jest.
 
-import { normalizarNombreEmpresa } from '../crm/repo';
+import { crearEsDeLaEmpresa } from '../shared/mails';
 import { extraerMails } from './mailsContacto';
 import type { FilaCRM } from '../shared/types';
 
@@ -11,26 +10,15 @@ export function dominioDeMail(mail: string): string {
 }
 
 /**
- * Empresa coincide si el dominio del mail cargado en el CRM está entre los dominios de los
- * invitados del evento, o si el nombre de la empresa está contenido en el título del evento
- * (sección 6, B5).
+ * La empresa coincide con el evento solo si alguno de los invitados es de la empresa: su mail
+ * está en la celda Mail o es del dominio propio de la empresa (no cuentan gmail.com, hotmail.com,
+ * etc.). El título del evento no se mira.
  */
-export function empresaCoincideConEvento(
-  fila: FilaCRM,
-  tituloEvento: string,
-  mailsInvitados: string[],
-): boolean {
-  const dominiosFila = extraerMails(fila.mail).map(dominioDeMail).filter(Boolean);
-  if (dominiosFila.length && mailsInvitados.some((m) => dominiosFila.includes(dominioDeMail(m)))) return true;
-  const empresaNorm = normalizarNombreEmpresa(fila.empresa);
-  if (!empresaNorm) return false;
-  return normalizarNombreEmpresa(tituloEvento).includes(empresaNorm);
+export function empresaCoincideConEvento(fila: FilaCRM, mailsInvitados: string[]): boolean {
+  const esEmpresa = crearEsDeLaEmpresa(extraerMails(fila.mail));
+  return mailsInvitados.some((m) => esEmpresa(m));
 }
 
-export function elegirMejorCoincidencia(
-  filas: readonly FilaCRM[],
-  tituloEvento: string,
-  mailsInvitados: string[],
-): FilaCRM | null {
-  return filas.find((f) => empresaCoincideConEvento(f, tituloEvento, mailsInvitados)) ?? null;
+export function elegirMejorCoincidencia(filas: readonly FilaCRM[], mailsInvitados: string[]): FilaCRM | null {
+  return filas.find((f) => empresaCoincideConEvento(f, mailsInvitados)) ?? null;
 }

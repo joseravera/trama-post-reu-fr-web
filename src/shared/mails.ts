@@ -35,3 +35,40 @@ export function agregarMails(celdaExistente: string | null | undefined, nuevos: 
   if (!faltan.length) return base || null;
   return base ? `${base}, ${faltan.join(', ')}` : faltan.join(', ');
 }
+
+// Dominios que no identifican a una empresa: mails personales y el del ITBA (Trama).
+export const DOMINIOS_GENERICOS: readonly string[] = [
+  'gmail.com', 'googlemail.com', 'hotmail.com', 'hotmail.com.ar', 'outlook.com', 'outlook.com.ar',
+  'live.com', 'live.com.ar', 'yahoo.com', 'yahoo.com.ar', 'icloud.com', 'me.com', 'aol.com',
+  'protonmail.com', 'proton.me', 'fibertel.com.ar', 'itba.edu.ar',
+];
+
+export function dominioDe(mail: string): string {
+  return mail.split('@')[1]?.toLowerCase().trim() ?? '';
+}
+
+// Direcciones de sistemas automáticos (no son una persona de la empresa).
+export function esMailAutomatico(mail: string): boolean {
+  const usuario = mail.split('@')[0]?.toLowerCase() ?? '';
+  return /^(no-?reply|do-?not-?reply|notifications?|notificaciones|mailer-daemon|postmaster|bounces?)([.+_-]|$)/.test(usuario);
+}
+
+// Dominios propios de la empresa a partir de sus mails (sin los genéricos), sin repetir.
+export function dominiosEmpresa(mails: readonly string[]): string[] {
+  return Array.from(new Set(mails.map(dominioDe).filter((d) => d && !DOMINIOS_GENERICOS.includes(d))));
+}
+
+// ¿Esta dirección es de la empresa? Sí si está en su celda Mail, o si es de su dominio propio y
+// no es una dirección automática ni de Trama.
+export function crearEsDeLaEmpresa(
+  mailsEmpresa: readonly string[],
+  excluir: readonly string[] = [],
+): (mail: string) => boolean {
+  const dominios = dominiosEmpresa(mailsEmpresa);
+  return (mail: string) => {
+    const m = mail.toLowerCase();
+    if (mailsEmpresa.includes(m)) return true;
+    if (excluir.includes(m) || esMailAutomatico(m)) return false;
+    return dominios.includes(dominioDe(m));
+  };
+}

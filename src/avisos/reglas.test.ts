@@ -49,10 +49,11 @@ describe('evaluarReglas — PINGUEAR', () => {
     expect(avisos.filter((a) => a.tipo === 'PINGUEAR')).toHaveLength(1);
   });
 
-  it('avisa en Mail respondido con DIAS_COORDINAR sin reunión coordinada', () => {
+  it('Mail respondido con DIAS_COORDINAR sin contacto es un seguimiento, no un pingueo', () => {
     const fila = filaBase({ estado: 'Mail respondido', fechaUltimoContacto: new Date('2026-11-21T09:00:00-03:00') });
     const avisos = evaluarReglas([fila], AHORA, PARAMETROS);
-    expect(avisos.filter((a) => a.tipo === 'PINGUEAR')).toHaveLength(1);
+    expect(avisos.map((a) => a.tipo)).toEqual(['SEGUIMIENTO_VENCIDO']);
+    expect(avisos[0].texto).toMatch(/Seguí a .* sin contacto/);
   });
 
   it('no avisa antes de tiempo', () => {
@@ -163,9 +164,11 @@ describe('evaluarReglas — traspasos', () => {
     expect(avisos[0].texto).toMatch(/traspaso/);
   });
 
-  it('pide coordinar si respondió el traspaso hace días', () => {
+  it('respondió el traspaso y pasaron días sin contacto: seguimiento para coordinar', () => {
     const fila = filaBase({ estado: 'Respondió traspaso', fechaUltimoContacto: new Date('2026-11-20T10:00:00-03:00') });
-    expect(evaluarReglas([fila], AHORA, PARAMETROS).map((a) => a.tipo)).toEqual(['PINGUEAR']);
+    const avisos = evaluarReglas([fila], AHORA, PARAMETROS);
+    expect(avisos.map((a) => a.tipo)).toEqual(['SEGUIMIENTO_VENCIDO']);
+    expect(avisos[0].texto).toMatch(/respondieron el traspaso/);
   });
 
   it('no avisa si el traspaso es reciente', () => {

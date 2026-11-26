@@ -1,4 +1,14 @@
-import { consultaEnviosA, consultaRespuestas, esPosterior, evaluarTraspaso, extraerMails, ultimaFecha } from './mailsContacto';
+import {
+  consultaEnviosA,
+  consultaMailsA,
+  consultaRespuestas,
+  esPosterior,
+  evaluarTraspaso,
+  extraerMails,
+  mailsNuevosDeLaEmpresa,
+  respuestaCambiaEstado,
+  ultimaFecha,
+} from './mailsContacto';
 
 describe('extraerMails', () => {
   it('saca todas las direcciones con cualquier separador', () => {
@@ -18,8 +28,8 @@ describe('extraerMails', () => {
 
 describe('consultaRespuestas', () => {
   it('arma un from: simple o con OR', () => {
-    expect(consultaRespuestas(['a@b.com'], 2)).toBe('from:a@b.com newer_than:2d');
-    expect(consultaRespuestas(['a@b.com', 'c@d.com'], 2)).toBe('from:(a@b.com OR c@d.com) newer_than:2d');
+    expect(consultaRespuestas(['a@gmail.com'], 2)).toBe('from:a@gmail.com newer_than:2d');
+    expect(consultaRespuestas(['a@b.com', 'c@d.com'], 2)).toBe('from:(a@b.com OR c@d.com OR b.com OR d.com) newer_than:2d');
   });
 
   it('null si no hay mails', () => {
@@ -30,7 +40,7 @@ describe('consultaRespuestas', () => {
 describe('consultaEnviosA', () => {
   it('busca mails del encargado a la empresa en Para o CC', () => {
     expect(consultaEnviosA('mmejliker@itba.edu.ar', ['a@x.com', 'b@x.com'], 2)).toBe(
-      'from:mmejliker@itba.edu.ar {to:a@x.com cc:a@x.com to:b@x.com cc:b@x.com} newer_than:2d',
+      'from:mmejliker@itba.edu.ar {to:a@x.com cc:a@x.com to:b@x.com cc:b@x.com to:x.com cc:x.com} newer_than:2d',
     );
     expect(consultaEnviosA('mmejliker@itba.edu.ar', [], 2)).toBeNull();
   });
@@ -100,5 +110,45 @@ describe('evaluarTraspaso', () => {
     expect(evaluarTraspaso(envioMartin, [], new Date('2026-11-24T00:00:00Z')).mailEnviado).toBe(true);
     expect(evaluarTraspaso(envioMartin, [], fechaUltimoContactoMal).mailEnviado).toBe(false);
     expect(evaluarTraspaso(null, [respuestaOcasa], undefined).mailEnviado).toBe(false);
+  });
+});
+
+describe('consultaMailsA', () => {
+  it('busca mails a la empresa en Para o CC', () => {
+    expect(consultaMailsA(['a@gmail.com'], 7)).toBe('{to:a@gmail.com cc:a@gmail.com} newer_than:7d');
+    expect(consultaMailsA(['a@x.com'], 7)).toBe('{to:a@x.com cc:a@x.com to:x.com cc:x.com} newer_than:7d');
+    expect(consultaMailsA([], 7)).toBeNull();
+  });
+});
+
+describe('respuestaCambiaEstado', () => {
+  const respuestaTraspaso = new Date('2026-11-24T12:00:00Z');
+  const mailProgramado = new Date('2026-11-27T11:00:00Z');
+
+  it('"Mail enviado" puesto a mano + respuesta vieja al traspaso: no pasa a "Mail respondido"', () => {
+    expect(respuestaCambiaEstado('Mail enviado', respuestaTraspaso, mailProgramado)).toBe(false);
+  });
+
+  it('si la empresa contesta después de nuestro último mail, sí cambia', () => {
+    expect(respuestaCambiaEstado('Mail enviado', new Date('2026-11-28T10:00:00Z'), mailProgramado)).toBe(true);
+    expect(respuestaCambiaEstado('Mail enviado', respuestaTraspaso, null)).toBe(true);
+  });
+
+  it('en "FR viejo mando el mail de traspaso" cualquier respuesta cuenta', () => {
+    expect(respuestaCambiaEstado('FR viejo mando el mail de traspaso', respuestaTraspaso, mailProgramado)).toBe(true);
+  });
+});
+
+describe('mailsNuevosDeLaEmpresa', () => {
+  it('suma a quien la empresa agregó en copia o como remitente, no a Trama ni a otros', () => {
+    const esDespegar = (m: string) => m.endsWith('@despegar.com');
+    const mensajes = [
+      { de: 'Oriana <orianaabrego@despegar.com>', para: 'dkaplan@itba.edu.ar', cc: 'maria.cid@despegar.com, mmejliker@itba.edu.ar', fecha: new Date() },
+      { de: 'mmejliker@itba.edu.ar', para: 'maria.cid@despegar.com', cc: 'nuevo@despegar.com, otro@gmail.com', fecha: new Date() },
+    ];
+    expect(mailsNuevosDeLaEmpresa(mensajes, esDespegar, ['maria.cid@despegar.com'])).toEqual([
+      'orianaabrego@despegar.com',
+      'nuevo@despegar.com',
+    ]);
   });
 });

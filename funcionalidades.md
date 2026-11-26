@@ -5,8 +5,26 @@ Granola y la app completa el CRM y te deja armado el mail de seguimiento en tu G
 sola algunos estados del CRM cuando detecta respuestas por mail, y una vez por semana te avisa
 qué empresas tenés que seguir.
 
-> Por ahora funciona completo solo para **Emprendedores**. El resto de los clubes puede entrar,
-> pero todavía no tiene los templates de mail ni recibe avisos.
+> **Por ahora esto está implementado solo para Emprendedores.** Para Agro, Consultoría,
+> Finanzas y Tecnología y Trama Lab todavía no está implementado (ver
+> [Otros clubes](#otros-clubes-todavía-no-implementado)). Todo lo que sigue describe cómo
+> funciona para Emprendedores.
+
+### Otros clubes: todavía no implementado
+
+Los FR y coordinadores de Agro, Consultoría, Finanzas y Tecnología y Trama Lab ya están cargados y
+pueden entrar a la web, pero:
+
+- **Cargar un post-reunión no funciona**: esos clubes no tienen su template de mail ni su carpeta
+  de adjuntos, así que la app no puede armar la vista previa ni el borrador.
+- **Pinguear no funciona**: tampoco tienen los templates de pingueo.
+- **No hay nada automático**: la app no revisa Gmail ni Calendar, no cambia estados, no suma
+  mails de contacto ni registra cambios en el historial para esos clubes.
+- **No reciben avisos ni resúmenes** por mail.
+- Lo que sí pueden usar es la pestaña **Equipo**, para ver las empresas de su club.
+
+Para habilitar otro club hace falta cargar sus templates y su carpeta de adjuntos, y activarlo en
+la configuración. Si tu club lo quiere usar, hablá con Josefina Ravera.
 
 **Link:** https://script.google.com/a/macros/itba.edu.ar/s/AKfycbzQoDFbqRGxBn_LabrwLdfohoknts1EKYPm1aqUxzmohEuQVLL_NHfV9y_k_n3-QV_x/exec
 

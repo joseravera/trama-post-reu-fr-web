@@ -200,6 +200,60 @@ describe('evaluarReglas — mail semanal a los FR (diaEnvioFr)', () => {
   });
 });
 
+describe('evaluarReglas — próxima acción pendiente ("háblennos en enero")', () => {
+  const ENERO = new Date('2027-01-05T10:00:00-03:00');
+
+  it('Mail respondido sin contacto pero con próxima acción a futuro: no pide seguimiento', () => {
+    const fila = filaBase({
+      estado: 'Mail respondido',
+      fechaUltimoContacto: new Date('2026-11-20T09:00:00-03:00'),
+      proximaAccion: 'Hablarles',
+      fechaProximaAccion: ENERO,
+    });
+    expect(evaluarReglas([fila], AHORA, PARAMETROS)).toHaveLength(0);
+  });
+
+  it('Respondió traspaso con próxima acción a futuro: no pide seguimiento', () => {
+    const fila = filaBase({
+      estado: 'Respondió traspaso',
+      fechaUltimoContacto: new Date('2026-11-20T09:00:00-03:00'),
+      fechaProximaAccion: ENERO,
+    });
+    expect(evaluarReglas([fila], AHORA, PARAMETROS)).toHaveLength(0);
+  });
+
+  it('si la próxima acción ya venció, vuelve el seguimiento', () => {
+    const fila = filaBase({
+      estado: 'Mail respondido',
+      fechaUltimoContacto: new Date('2026-11-20T09:00:00-03:00'),
+      fechaProximaAccion: new Date('2026-11-24T10:00:00-03:00'), // ayer
+    });
+    expect(evaluarReglas([fila], AHORA, PARAMETROS).map((a) => a.tipo)).toEqual(['SEGUIMIENTO_VENCIDO']);
+  });
+
+  it('Mail enviado sin respuesta pero con próxima acción a futuro: no pide pinguear', () => {
+    const fila = filaBase({
+      estado: 'Mail enviado',
+      fechaUltimoContacto: new Date('2026-11-10T09:00:00-03:00'),
+      fechaProximaAccion: ENERO,
+    });
+    expect(evaluarReglas([fila], AHORA, PARAMETROS)).toHaveLength(0);
+  });
+
+  it('cuando se acerca la fecha avisa el compromiso, no el seguimiento', () => {
+    const LUNES = new Date('2027-01-04T09:00:00-03:00');
+    const fila = filaBase({
+      estado: 'Mail respondido',
+      fechaUltimoContacto: new Date('2026-11-20T09:00:00-03:00'),
+      proximaAccion: 'Hablarles',
+      fechaProximaAccion: ENERO,
+    });
+    const avisos = evaluarReglas([fila], LUNES, { ...PARAMETROS, diaEnvioFr: 1 });
+    expect(avisos.map((a) => a.tipo)).toEqual(['COMPROMISO_TRAMA']);
+    expect(avisos[0].texto).toMatch(/Mañana vence "Hablarles"/);
+  });
+});
+
 describe('resolverDestinatarios — nombres', () => {
   it('encuentra al FR aunque el nombre del CRM tenga tildes o espacios distintos', () => {
     const usuarios: Usuario[] = [{ mail: 'jdealba@itba.edu.ar', nombre: 'Joaquín de Alba', club: 'Trama Lab', rol: 'Coordinador' }];

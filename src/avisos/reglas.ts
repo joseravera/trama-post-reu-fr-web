@@ -55,7 +55,15 @@ function evaluarCargarPostReunion(fila: FilaCRM, ahora: Date, parametros: Parame
   );
 }
 
+// El FR cargó una próxima acción para hoy o más adelante (ej. la empresa pidió "háblennos en
+// enero"): hasta esa fecha no se avisa pingueo ni seguimiento sin contacto. Cuando se acerca,
+// avisa evaluarCompromisoTrama; si pasa sin contacto, vuelven los avisos normales.
+function proximaAccionPendiente(fila: FilaCRM, ahora: Date): boolean {
+  return !!fila.fechaProximaAccion && diferenciaDiasEnZona(ahora, fila.fechaProximaAccion) >= 0;
+}
+
 function evaluarPinguear(fila: FilaCRM, ahora: Date, parametros: ParametrosReglas): Aviso | null {
+  if (proximaAccionPendiente(fila, ahora)) return null;
   // Las filas de traspaso solo tienen "Fecha primer contacto": se usa esa si no hay último contacto.
   const ultimoContacto = fila.fechaUltimoContacto ?? fila.fechaPrimerContacto;
   if (!ultimoContacto) return null;
@@ -111,9 +119,11 @@ function evaluarSeguimientoVencido(fila: FilaCRM, ahora: Date, parametros: Param
 
 // La empresa respondió ("Mail respondido" o "Respondió traspaso") y pasaron DIAS_COORDINAR días
 // sin contacto (ni de ellos ni nuestro): hay que seguirla para coordinar la reunión. Es un
-// seguimiento, no un pingueo (la empresa sí respondió).
+// seguimiento, no un pingueo (la empresa sí respondió). No avisa si hay una próxima acción
+// pendiente (proximaAccionPendiente).
 function evaluarSeguimientoSinContacto(fila: FilaCRM, ahora: Date, parametros: ParametrosReglas): Aviso | null {
   if (fila.estado !== 'Mail respondido' && fila.estado !== 'Respondió traspaso') return null;
+  if (proximaAccionPendiente(fila, ahora)) return null;
   const ultimoContacto = fila.fechaUltimoContacto ?? fila.fechaPrimerContacto;
   if (!ultimoContacto) return null;
   const dias = diferenciaDiasEnZona(ultimoContacto, ahora);

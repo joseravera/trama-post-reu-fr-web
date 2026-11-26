@@ -184,13 +184,20 @@ Los avisos los manda la app a la mañana (9:00). No son borradores: llegan a tu 
 - Post-reuniones sin cargar: la reunión ya pasó (más de 24 hs) y la empresa sigue en "Reunión
   coordinada".
 - Empresas para pinguear: "Mail enviado" o "FR viejo mando el mail de traspaso" sin respuesta
-  hace 7 días o más.
+  hace 7 días o más (salvo que tenga una próxima acción a futuro).
 - Seguimientos:
   - "Mail respondido" o "Respondió traspaso" con 3 días o más sin contacto (ni de ellos ni
-    nuestro).
+    nuestro), salvo que tenga una próxima acción a futuro.
   - "Tuvimos reunión…" o "Tratativas" con la próxima acción vencida o que vence antes del lunes
     siguiente, o sin próxima acción y 7 días sin contacto.
 - Compromisos de Trama que vencen antes del lunes siguiente.
+
+**Si la empresa pidió que le hablen más adelante** (por ejemplo, "háblennos en enero"): cargá
+"Fecha próxima acción" (ej. 05/01) en la planilla. Hasta esa fecha la empresa no aparece en
+pingueos ni en seguimientos, y te avisamos cuando se acerque. Si la fecha pasa y nadie le
+escribió, vuelven los avisos de siempre. Con la fecha alcanza; si además cargás "Próxima acción"
+(ej. "Hablarles"), el aviso dice qué hay que hacer ("Mañana vence "Hablarles" con…") en vez de
+"un compromiso".
 
 **Escalamientos al coordinador** (se mandan una sola vez por empresa):
 - 2 pingueos o más sin respuesta y 7 días sin contacto.

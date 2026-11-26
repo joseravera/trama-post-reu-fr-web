@@ -1,14 +1,18 @@
 import type { Club, Estado } from './types';
 
-// Único ID de spreadsheet que puede aparecer en el código (ver sección 3.3 del plan).
-// Copia de 💸 Contactos '26-'27 💸 — el CRM real de Trama NO se toca.
-export const SPREADSHEET_ID = '11T2Z17wZpostplko4ayov_qCxOk4gBwMcL6ZiC9B5rM';
+// Únicos IDs de spreadsheet que pueden aparecer en el código (ver plan-implementacion-web.md, 4.5).
+// CRM: solo las hojas de cada club (Copia de 💸 Contactos '26-'27 💸). No se le agregan hojas.
+export const SPREADSHEET_ID = '1OERRE_Z03hhWMnMYfGl9bj130eKJfeTH2ytUJEXKcaA';
+// .config: hojas de sistema (_Usuarios, _Clubes, _Parametros, _Historial, _Snapshot, _LogAvisos).
+export const CONFIG_SPREADSHEET_ID = '1LfHeTQ9HrjPrX-MtHugN18j_keWi6vu5ghtONbUt2bo';
 
 export const CLUBES: Club[] = ['Agro', 'Consultoría', 'Finanzas y Tecnología', 'Emprendedores', 'Trama Lab'];
 
 export const ESTADOS: Estado[] = [
   'Mail enviado',
   'Mail respondido',
+  'FR viejo mando el mail de traspaso',
+  'Respondió traspaso',
   'Reunión coordinada',
   'Tuvimos reunión, esperando respuesta',
   'Tratativas',
@@ -64,6 +68,7 @@ export const PARAMETROS = {
   PINGUEOS_ESCALA: 'PINGUEOS_ESCALA',
   DIAS_VENCIDO_ESCALA: 'DIAS_VENCIDO_ESCALA',
   DIAS_ENVIO_AGENDA: 'DIAS_ENVIO_AGENDA',
+  DIA_ENVIO_FR: 'DIA_ENVIO_FR',
 } as const;
 
 // Placeholders del template de mail por club (sección 7, C1).
@@ -77,9 +82,9 @@ export const PLACEHOLDERS_TEMPLATE = {
 // Asunto del borrador del mail a la empresa (sección 7, C3). ConfigService.getClub no expone
 // un asunto por club, así que por ahora es el mismo formato para todos (usa el mismo
 // placeholder de empresa que el template del cuerpo).
-export const ASUNTO_BORRADOR_TEMPLATE = `Trama ITBA x ${PLACEHOLDERS_TEMPLATE.NOMBRE_EMPRESA} — Resumen de la reunión`;
+export const ASUNTO_BORRADOR_TEMPLATE = `${PLACEHOLDERS_TEMPLATE.NOMBRE_EMPRESA} & Trama ITBA`;
 
-// Asunto del borrador de pingueo (A7). Mismo formato simple para los dos templates.
-export const ASUNTO_PINGUEO_TEMPLATE = `Trama ITBA x ${PLACEHOLDERS_TEMPLATE.NOMBRE_EMPRESA}`;
+// Asunto del borrador de pingueo (A7): el mismo formato que el post-reunión.
+export const ASUNTO_PINGUEO_TEMPLATE = `${PLACEHOLDERS_TEMPLATE.NOMBRE_EMPRESA} & Trama ITBA`;
 
 export const PREFIJO_ASUNTO_AVISOS = '[Trama FR]';

@@ -153,3 +153,54 @@ describe('resolverDestinatarios', () => {
     expect(resolverDestinatarios([aviso], usuarios)).toHaveLength(0);
   });
 });
+
+describe('evaluarReglas — traspasos', () => {
+  it('pide pinguear un traspaso sin respuesta usando la fecha de primer contacto', () => {
+    const fila = filaBase({ estado: 'FR viejo mando el mail de traspaso', fechaPrimerContacto: new Date('2026-11-10T10:00:00-03:00') });
+    const avisos = evaluarReglas([fila], AHORA, PARAMETROS);
+    expect(avisos).toHaveLength(1);
+    expect(avisos[0]).toMatchObject({ tipo: 'PINGUEAR' });
+    expect(avisos[0].texto).toMatch(/traspaso/);
+  });
+
+  it('pide coordinar si respondió el traspaso hace días', () => {
+    const fila = filaBase({ estado: 'Respondió traspaso', fechaUltimoContacto: new Date('2026-11-20T10:00:00-03:00') });
+    expect(evaluarReglas([fila], AHORA, PARAMETROS).map((a) => a.tipo)).toEqual(['PINGUEAR']);
+  });
+
+  it('no avisa si el traspaso es reciente', () => {
+    const fila = filaBase({ estado: 'FR viejo mando el mail de traspaso', fechaPrimerContacto: new Date('2026-11-24T10:00:00-03:00') });
+    expect(evaluarReglas([fila], AHORA, PARAMETROS)).toHaveLength(0);
+  });
+});
+
+describe('evaluarReglas — mail semanal a los FR (diaEnvioFr)', () => {
+  const LUNES = new Date('2026-11-23T09:00:00-03:00');
+  const SEMANAL: ParametrosReglas = { ...PARAMETROS, diaEnvioFr: 1 };
+
+  it('avisa los compromisos que vencen antes del próximo mail, no solo los de mañana', () => {
+    const fila = filaBase({ estado: 'Reunión coordinada', proximaAccion: 'Mandar PDB', fechaProximaAccion: new Date('2026-11-27T10:00:00-03:00') });
+    expect(evaluarReglas([fila], LUNES, PARAMETROS).some((a) => a.tipo === 'COMPROMISO_TRAMA')).toBe(false);
+    const aviso = evaluarReglas([fila], LUNES, SEMANAL).find((a) => a.tipo === 'COMPROMISO_TRAMA');
+    expect(aviso?.texto).toMatch(/En 4 días vence "Mandar PDB"/);
+  });
+
+  it('no avisa compromisos que vencen después del próximo mail', () => {
+    const fila = filaBase({ estado: 'Reunión coordinada', fechaProximaAccion: new Date('2026-12-05T10:00:00-03:00') });
+    expect(evaluarReglas([fila], LUNES, SEMANAL).some((a) => a.tipo === 'COMPROMISO_TRAMA')).toBe(false);
+  });
+
+  it('el seguimiento vencido mira toda la semana hasta el próximo mail', () => {
+    const fila = filaBase({ estado: 'Tratativas', proximaAccion: 'Llamar', fechaProximaAccion: new Date('2026-11-28T10:00:00-03:00') });
+    expect(evaluarReglas([fila], LUNES, PARAMETROS).some((a) => a.tipo === 'SEGUIMIENTO_VENCIDO')).toBe(false);
+    expect(evaluarReglas([fila], LUNES, SEMANAL).some((a) => a.tipo === 'SEGUIMIENTO_VENCIDO')).toBe(true);
+  });
+});
+
+describe('resolverDestinatarios — nombres', () => {
+  it('encuentra al FR aunque el nombre del CRM tenga tildes o espacios distintos', () => {
+    const usuarios: Usuario[] = [{ mail: 'jdealba@itba.edu.ar', nombre: 'Joaquín de Alba', club: 'Trama Lab', rol: 'Coordinador' }];
+    const aviso: Aviso = { clave: 'k', tipo: 'PINGUEAR', destinatarios: ['joaquin de alba '], club: 'Trama Lab', empresa: 'X', texto: 't' };
+    expect(resolverDestinatarios([aviso], usuarios)[0].destinatarios).toEqual(['jdealba@itba.edu.ar']);
+  });
+});

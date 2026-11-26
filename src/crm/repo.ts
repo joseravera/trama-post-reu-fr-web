@@ -10,10 +10,17 @@ import type { Club, CrmService, Estado, FilaCRM, PostReunionConfirmado, Usuario 
 // `new Date("2026-12-01")` a secas se guarda como 30/11 en la hoja). La reusamos en vez de
 // duplicarla con otro criterio.
 import { fechaDeDia } from '../extraccion/validacion';
-import { abrirSpreadsheet } from './config';
+import { agregarMails } from '../shared/mails';
+import { abrirCrm } from './config';
 import { getEventos, registrarEvento } from './historial';
-import { esEstadoFinal, transicionValida as transicionValidaMaquina } from './maquinaEstados';
-import { buscarFilaPorClave, indiceColumna, primeraFilaVacia } from './sheetUtils';
+import {
+  esEstadoFinal,
+  estadoAlEscribirEncargado,
+  estadoAlMandarResumen,
+  estadoAlResponder,
+  transicionValida as transicionValidaMaquina,
+} from './maquinaEstados';
+import { buscarFilaPorClave, indiceColumna, indiceColumnaOpcional, primeraFilaVacia } from './sheetUtils';
 
 // ---------- Lógica pura (testeada en repo.test.ts) ----------
 
@@ -50,14 +57,35 @@ export function agregarComentario(comentariosExistentes: string | undefined, lin
   return existentes ? `${existentes}\n${lineaNueva}` : lineaNueva;
 }
 
+// Columnas que pueden faltar en alguna hoja de club: se leen como vacías y no se escriben.
+const COLUMNAS_OPCIONALES: readonly string[] = [COLUMNAS_CRM.PINGUEOS_SIN_RESPUESTA];
+
+function indiceColumnaCrm(encabezados: readonly unknown[], nombre: string): number {
+  return COLUMNAS_OPCIONALES.includes(nombre) ? indiceColumnaOpcional(encabezados, nombre) : indiceColumna(encabezados, nombre);
+}
+
+// Acepta Date, "dd/mm/yyyy" (como se tipea a mano en la hoja) o cualquier texto que entienda Date.
+export function parsearFechaCelda(v: unknown): Date | undefined {
+  if (v === '' || v === null || v === undefined) return undefined;
+  if (v instanceof Date) return v;
+  const texto = String(v).trim();
+  const ddmmyyyy = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(texto);
+  if (ddmmyyyy) {
+    const [, d, m, a] = ddmmyyyy;
+    return new Date(`${a}-${m.padStart(2, '0')}-${d.padStart(2, '0')}T12:00:00-03:00`);
+  }
+  const fecha = new Date(texto);
+  return Number.isNaN(fecha.getTime()) ? undefined : fecha;
+}
+
 export function filaCRMDesdeValores(club: Club, encabezados: readonly unknown[], valores: readonly unknown[]): FilaCRM {
-  const obtener = (nombre: string) => valores[indiceColumna(encabezados, nombre)];
+  const obtener = (nombre: string) => {
+    const i = indiceColumnaCrm(encabezados, nombre);
+    return i === -1 ? undefined : valores[i];
+  };
   const comoTexto = (v: unknown): string | undefined =>
     v === '' || v === null || v === undefined ? undefined : String(v);
-  const comoFecha = (v: unknown): Date | undefined => {
-    if (v === '' || v === null || v === undefined) return undefined;
-    return v instanceof Date ? v : new Date(String(v));
-  };
+  const comoFecha = parsearFechaCelda;
   const comoNumero = (v: unknown): number => {
     const n = Number(v);
     return Number.isFinite(n) ? n : 0;
@@ -83,10 +111,14 @@ export function filaCRMDesdeValores(club: Club, encabezados: readonly unknown[],
   };
 }
 
-export function valoresDesdeFilaCRM(encabezados: readonly unknown[], fila: FilaCRM): unknown[] {
-  const valores = new Array(encabezados.length).fill('');
+// Pares (índice de columna, valor) de las columnas que maneja el sistema. Las columnas que no
+// conoce (ej. "Es traspaso?" en Emprendedores) no aparecen: nunca se escriben.
+export function celdasDesdeFilaCRM(encabezados: readonly unknown[], fila: FilaCRM): Array<[number, unknown]> {
+  const celdas: Array<[number, unknown]> = [];
   const asignar = (nombre: string, valor: unknown) => {
-    valores[indiceColumna(encabezados, nombre)] = valor instanceof Date ? valor : valor ?? '';
+    const i = indiceColumnaCrm(encabezados, nombre);
+    if (i === -1) return;
+    celdas.push([i, valor instanceof Date ? valor : valor ?? '']);
   };
   asignar(COLUMNAS_CRM.EMPRESA, fila.empresa);
   asignar(COLUMNAS_CRM.TRAMERO_ENCARGADO, fila.trameroEncargado);
@@ -103,13 +135,38 @@ export function valoresDesdeFilaCRM(encabezados: readonly unknown[], fila: FilaC
   asignar(COLUMNAS_CRM.PROXIMA_ACCION, fila.proximaAccion);
   asignar(COLUMNAS_CRM.FECHA_PROXIMA_ACCION, fila.fechaProximaAccion);
   asignar(COLUMNAS_CRM.PINGUEOS_SIN_RESPUESTA, fila.pingueosSinRespuesta);
+  return celdas;
+}
+
+// Agrupa las celdas en tramos de columnas contiguas, para escribir cada tramo con un solo
+// setValues sin tocar las columnas del medio. `columna` es 1-based, como la usa Sheets.
+export function tramosDeEscritura(celdas: Array<[number, unknown]>): Array<{ columna: number; valores: unknown[] }> {
+  const ordenadas = [...celdas].sort((a, b) => a[0] - b[0]);
+  const tramos: Array<{ columna: number; valores: unknown[] }> = [];
+  for (const [i, valor] of ordenadas) {
+    const ultimo = tramos[tramos.length - 1];
+    if (ultimo && ultimo.columna + ultimo.valores.length === i + 1) ultimo.valores.push(valor);
+    else tramos.push({ columna: i + 1, valores: [valor] });
+  }
+  return tramos;
+}
+
+// La fila completa tal como quedaría en la hoja: parte de `valoresActuales` (lo que ya había) y
+// pisa solo las columnas del sistema.
+export function valoresDesdeFilaCRM(
+  encabezados: readonly unknown[],
+  fila: FilaCRM,
+  valoresActuales: readonly unknown[] = [],
+): unknown[] {
+  const valores: unknown[] = encabezados.map((_, i) => valoresActuales[i] ?? '');
+  for (const [i, valor] of celdasDesdeFilaCRM(encabezados, fila)) valores[i] = valor;
   return valores;
 }
 
 // ---------- Acceso a Sheets ----------
 
 function obtenerHojaClub(club: Club): GoogleAppsScript.Spreadsheet.Sheet {
-  const hoja = abrirSpreadsheet().getSheetByName(club);
+  const hoja = abrirCrm().getSheetByName(club);
   if (!hoja) throw new Error(`No existe la hoja del club "${club}"`);
   return hoja;
 }
@@ -133,8 +190,51 @@ function requerirFila(club: Club, empresa: string, encabezados: readonly unknown
   return { numeroFila, fila: filaCRMDesdeValores(club, encabezados, valores[numeroFila - 1]) };
 }
 
+// Escribe solo las columnas del sistema; el resto de la fila (columnas propias del club,
+// casillas, fórmulas) queda como estaba.
 function escribirFila(hoja: GoogleAppsScript.Spreadsheet.Sheet, numeroFila: number, encabezados: readonly unknown[], fila: FilaCRM): void {
-  hoja.getRange(numeroFila, 1, 1, encabezados.length).setValues([valoresDesdeFilaCRM(encabezados, fila)]);
+  for (const tramo of tramosDeEscritura(celdasDesdeFilaCRM(encabezados, fila))) {
+    hoja.getRange(numeroFila, tramo.columna, 1, tramo.valores.length).setValues([tramo.valores]);
+  }
+}
+
+// Cambio de estado que detecta el sync de Gmail a partir de un mail nuestro (`siguiente` dice a
+// qué estado pasa; si devuelve el mismo, no se toca nada). Pone pingueos en 0, "Fecha último
+// contacto" = fecha del mail y lo registra en _Historial con origen GMAIL.
+function cambiarEstadoPorMail(
+  club: Club,
+  empresa: string,
+  fr: Usuario,
+  fecha: Date,
+  siguiente: (estado: Estado | undefined) => Estado | undefined,
+): FilaCRM {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30_000);
+  try {
+    const hoja = obtenerHojaClub(club);
+    const { encabezados, valores } = leerTabla(hoja);
+    const { numeroFila, fila } = requerirFila(club, empresa, encabezados, valores);
+    const nuevoEstado = siguiente(fila.estado);
+    if (nuevoEstado === fila.estado) return fila;
+    // Nunca retrocede "Fecha último contacto" (ej. si la empresa ya respondió después de este mail).
+    const ultimo = fila.fechaUltimoContacto && fila.fechaUltimoContacto > fecha ? fila.fechaUltimoContacto : fecha;
+    const nuevaFila: FilaCRM = { ...fila, estado: nuevoEstado, pingueosSinRespuesta: 0, fechaUltimoContacto: ultimo };
+    escribirFila(hoja, numeroFila, encabezados, nuevaFila);
+    registrarEvento({
+      timestamp: now(),
+      club,
+      empresa,
+      fr: fr.nombre,
+      hechoPor: fr.verComoPor,
+      tipo: 'CAMBIO_ESTADO',
+      estadoAnterior: fila.estado,
+      estadoNuevo: nuevoEstado,
+      origen: 'GMAIL',
+    });
+    return nuevaFila;
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 // ---------- CrmService ----------
@@ -197,7 +297,8 @@ export function crearCrmService(): CrmService {
           persona: p.datos.persona ?? existente?.persona,
           rolPersona: p.datos.rolPersona ?? existente?.rolPersona,
           telefono: p.datos.telefono ?? existente?.telefono,
-          mail: p.datos.mail ?? existente?.mail,
+          // Suma los mails del paso 2 a los que ya había en la celda, sin borrar ninguno.
+          mail: agregarMails(existente?.mail, p.datos.mail) ?? undefined,
           linkedin: p.datos.linkedin ?? existente?.linkedin,
           estado: p.datos.estadoSugerido,
           comentarios: agregarComentario(existente?.comentarios, lineaComentario),
@@ -211,7 +312,7 @@ export function crearCrmService(): CrmService {
           pingueosSinRespuesta: 0,
         };
 
-        const numeroFila = numeroFilaExistente ?? primeraFilaVacia(valores);
+        const numeroFila = numeroFilaExistente ?? primeraFilaVacia(valores, idxEmpresa);
         escribirFila(hoja, numeroFila, encabezados, nuevaFila);
 
         // Idempotencia: confirmar la misma reunión (club+empresa+fechaReunion) dos veces no
@@ -227,6 +328,7 @@ export function crearCrmService(): CrmService {
               club: p.club,
               empresa: p.empresa,
               fr: fr.nombre,
+              hechoPor: fr.verComoPor,
               tipo: 'ALTA',
               estadoNuevo: nuevaFila.estado,
               origen: 'UI',
@@ -237,6 +339,7 @@ export function crearCrmService(): CrmService {
             club: p.club,
             empresa: p.empresa,
             fr: fr.nombre,
+            hechoPor: fr.verComoPor,
             tipo: 'POST_REUNION',
             estadoAnterior: existente?.estado,
             estadoNuevo: nuevaFila.estado,
@@ -250,7 +353,7 @@ export function crearCrmService(): CrmService {
       }
     },
 
-    registrarPingueo(club, empresa, fr) {
+    registrarPingueo(club, empresa, fr, fecha, origen = 'UI') {
       const lock = LockService.getScriptLock();
       lock.waitLock(30_000);
       try {
@@ -260,10 +363,12 @@ export function crearCrmService(): CrmService {
         if (fila.estado && esEstadoFinal(fila.estado)) {
           throw new Error(`No se puede pinguear: "${empresa}" ya está en un estado final (${fila.estado})`);
         }
+        const enviado = fecha ?? now();
         const nuevaFila: FilaCRM = {
           ...fila,
           pingueosSinRespuesta: fila.pingueosSinRespuesta + 1,
-          fechaUltimoContacto: now(),
+          // Nunca retrocede (ej. si la empresa ya respondió después).
+          fechaUltimoContacto: fila.fechaUltimoContacto && fila.fechaUltimoContacto > enviado ? fila.fechaUltimoContacto : enviado,
         };
         escribirFila(hoja, numeroFila, encabezados, nuevaFila);
         registrarEvento({
@@ -271,10 +376,11 @@ export function crearCrmService(): CrmService {
           club,
           empresa,
           fr: fr.nombre,
+          hechoPor: fr.verComoPor,
           tipo: 'PINGUEO',
           estadoAnterior: fila.estado,
           estadoNuevo: fila.estado,
-          origen: 'UI',
+          origen,
         });
         return nuevaFila;
       } finally {
@@ -282,19 +388,19 @@ export function crearCrmService(): CrmService {
       }
     },
 
-    registrarRespuesta(club, empresa, fr, origen = 'UI') {
+    registrarRespuesta(club, empresa, fr, origen = 'UI', fecha) {
       const lock = LockService.getScriptLock();
       lock.waitLock(30_000);
       try {
         const hoja = obtenerHojaClub(club);
         const { encabezados, valores } = leerTabla(hoja);
         const { numeroFila, fila } = requerirFila(club, empresa, encabezados, valores);
-        const nuevoEstado: Estado | undefined = fila.estado === 'Mail enviado' ? 'Mail respondido' : fila.estado;
+        const nuevoEstado: Estado | undefined = estadoAlResponder(fila.estado);
         const nuevaFila: FilaCRM = {
           ...fila,
           estado: nuevoEstado,
           pingueosSinRespuesta: 0,
-          fechaUltimoContacto: now(),
+          fechaUltimoContacto: fecha ?? now(),
         };
         escribirFila(hoja, numeroFila, encabezados, nuevaFila);
         registrarEvento({
@@ -302,6 +408,7 @@ export function crearCrmService(): CrmService {
           club,
           empresa,
           fr: fr.nombre,
+          hechoPor: fr.verComoPor,
           tipo: 'RESPUESTA',
           estadoAnterior: fila.estado,
           estadoNuevo: nuevoEstado,
@@ -311,6 +418,14 @@ export function crearCrmService(): CrmService {
       } finally {
         lock.releaseLock();
       }
+    },
+
+    registrarMailDelEncargado(club, empresa, fr, fecha) {
+      return cambiarEstadoPorMail(club, empresa, fr, fecha, estadoAlEscribirEncargado);
+    },
+
+    registrarResumenEnviado(club, empresa, fr, fecha) {
+      return cambiarEstadoPorMail(club, empresa, fr, fecha, estadoAlMandarResumen);
     },
 
     cambiarEstado(club, empresa, nuevo, fr) {
@@ -330,6 +445,7 @@ export function crearCrmService(): CrmService {
           club,
           empresa,
           fr: fr.nombre,
+          hechoPor: fr.verComoPor,
           tipo: 'CAMBIO_ESTADO',
           estadoAnterior: fila.estado,
           estadoNuevo: nuevo,
@@ -361,7 +477,7 @@ export function crearCrmService(): CrmService {
           estado: 'Reunión coordinada',
           proximaAccion: 'Reunión',
           fechaProximaAccion: fechaEvento,
-          fechaUltimoContacto: now(),
+          // "Fecha último contacto" no se toca: ver un evento en el Calendar no es un contacto.
         };
         escribirFila(hoja, numeroFila, encabezados, nuevaFila);
 
@@ -371,6 +487,7 @@ export function crearCrmService(): CrmService {
             club,
             empresa,
             fr: fr.nombre,
+            hechoPor: fr.verComoPor,
             tipo: 'CAMBIO_ESTADO',
             estadoAnterior: fila.estado,
             estadoNuevo: 'Reunión coordinada',

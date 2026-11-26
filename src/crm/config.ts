@@ -1,25 +1,31 @@
 // Dueño: Persona B (sección 6, B1). ConfigService: lee _Usuarios, _Clubes, _Parametros, con caché.
 //
 // Encabezados esperados (en minúscula, tal cual quedan en la hoja):
-//   _Usuarios:    mail, nombre, club, rol
+//   _Usuarios:    mail, nombre, club, rol, admin (opcional)
 //   _Clubes:      club, hoja, templateDocId, carpetaAdjuntosId, templatePingueoPrimerContactoDocId,
-//                 templatePingueoPostReunionDocId
+//                 templatePingueoPostReunionDocId, activo (opcional)
 //   _Parametros:  nombre, valor
 
-import { HOJAS_SISTEMA, SPREADSHEET_ID } from '../shared/constants';
+import { CONFIG_SPREADSHEET_ID, HOJAS_SISTEMA, SPREADSHEET_ID } from '../shared/constants';
 import type { Club, ConfigService, Rol, Usuario } from '../shared/types';
-import { indiceColumna } from './sheetUtils';
+import { indiceColumna, indiceColumnaOpcional } from './sheetUtils';
 
 const CACHE_TTL_SEGUNDOS = 5 * 60;
 
-// Único punto de acceso al spreadsheet del proyecto (regla de la sección 3.3): queda
-// prohibido usar SpreadsheetApp.openById / openByUrl en cualquier otro lugar del código.
-export function abrirSpreadsheet(): GoogleAppsScript.Spreadsheet.Spreadsheet {
+// Únicos puntos de acceso a los spreadsheets del proyecto: queda prohibido usar
+// SpreadsheetApp.openById / openByUrl en cualquier otro lugar del código.
+// - abrirCrm(): hojas de cada club.
+// - abrirConfig(): hojas de sistema (prefijo `_`).
+export function abrirCrm(): GoogleAppsScript.Spreadsheet.Spreadsheet {
   return SpreadsheetApp.openById(SPREADSHEET_ID);
 }
 
+export function abrirConfig(): GoogleAppsScript.Spreadsheet.Spreadsheet {
+  return SpreadsheetApp.openById(CONFIG_SPREADSHEET_ID);
+}
+
 function leerHojaSistema(nombreHoja: string): { encabezados: unknown[]; filas: unknown[][] } {
-  const hoja = abrirSpreadsheet().getSheetByName(nombreHoja);
+  const hoja = abrirConfig().getSheetByName(nombreHoja);
   if (!hoja) throw new Error(`No existe la hoja de sistema "${nombreHoja}" (¿falta crearla? ver sección 6, B1)`);
   const valores = hoja.getDataRange().getValues();
   return { encabezados: valores[0] ?? [], filas: valores.slice(1) };
@@ -39,6 +45,13 @@ interface FilaUsuario {
   nombre: string;
   club: Club | null;
   rol: Rol;
+  admin: boolean;
+}
+
+// Casilla de verificación o texto "TRUE"/"sí" en la hoja.
+function esVerdadero(v: unknown): boolean {
+  if (v === true) return true;
+  return ['true', 'verdadero', 'si', 'sí', '1', 'x'].includes(String(v ?? '').trim().toLowerCase());
 }
 
 function leerUsuarios(): FilaUsuario[] {
@@ -48,13 +61,15 @@ function leerUsuarios(): FilaUsuario[] {
     const iNombre = indiceColumna(encabezados, 'nombre');
     const iClub = indiceColumna(encabezados, 'club');
     const iRol = indiceColumna(encabezados, 'rol');
+    const iAdmin = indiceColumnaOpcional(encabezados, 'admin');
     return filas
       .filter((f) => f[iMail])
       .map((f) => ({
         mail: String(f[iMail]).trim().toLowerCase(),
-        nombre: String(f[iNombre]),
+        nombre: String(f[iNombre]).replace(/\s+/g, ' ').trim(),
         club: (f[iClub] ? (f[iClub] as Club) : null),
         rol: f[iRol] as Rol,
+        admin: iAdmin !== -1 && esVerdadero(f[iAdmin]),
       }));
   });
 }
@@ -66,6 +81,7 @@ interface FilaClub {
   carpetaAdjuntosId: string;
   templatePingueoPrimerContactoDocId: string;
   templatePingueoPostReunionDocId: string;
+  activo: boolean;
 }
 
 function leerClubes(): FilaClub[] {
@@ -81,6 +97,7 @@ function leerClubes(): FilaClub[] {
     // claro si se intenta pinguear sin ese template configurado.
     const iTemplatePrimerContacto = indiceColumna(encabezados, 'templatePingueoPrimerContactoDocId');
     const iTemplatePostReunion = indiceColumna(encabezados, 'templatePingueoPostReunionDocId');
+    const iActivo = indiceColumnaOpcional(encabezados, 'activo');
     return filas
       .filter((f) => f[iClub])
       .map((f) => ({
@@ -90,6 +107,7 @@ function leerClubes(): FilaClub[] {
         carpetaAdjuntosId: String(f[iCarpeta]),
         templatePingueoPrimerContactoDocId: String(f[iTemplatePrimerContacto] ?? ''),
         templatePingueoPostReunionDocId: String(f[iTemplatePostReunion] ?? ''),
+        activo: iActivo === -1 || esVerdadero(f[iActivo]),
       }));
   });
 }
@@ -114,14 +132,14 @@ export function crearConfigService(): ConfigService {
     getUsuario(mail: string): Usuario | null {
       const buscado = mail.trim().toLowerCase();
       const fila = leerUsuarios().find((u) => u.mail === buscado);
-      return fila ? { mail: fila.mail, nombre: fila.nombre, club: fila.club, rol: fila.rol } : null;
+      return fila ? { mail: fila.mail, nombre: fila.nombre, club: fila.club, rol: fila.rol, admin: fila.admin } : null;
     },
 
     getUsuarios(filtro?: { rol?: Rol; club?: Club }): Usuario[] {
       return leerUsuarios()
         .filter((u) => !filtro?.rol || u.rol === filtro.rol)
         .filter((u) => !filtro?.club || u.club === filtro.club)
-        .map((u) => ({ mail: u.mail, nombre: u.nombre, club: u.club, rol: u.rol }));
+        .map((u) => ({ mail: u.mail, nombre: u.nombre, club: u.club, rol: u.rol, admin: u.admin }));
     },
 
     getClub(club: Club) {
@@ -149,6 +167,15 @@ export function crearConfigService(): ConfigService {
         throw new Error(`El parámetro "${nombre}" no es numérico (valor: "${valor}")`);
       }
       return numero;
+    },
+
+    getParametroTexto(nombre: string): string | null {
+      const valor = leerParametros().get(nombre);
+      return valor === undefined || valor === '' ? null : valor;
+    },
+
+    getClubesActivos(): Club[] {
+      return leerClubes().filter((c) => c.activo).map((c) => c.club);
     },
   };
 }

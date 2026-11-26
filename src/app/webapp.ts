@@ -10,6 +10,8 @@ import { diaISO, esFechaISO, ESTADO_POR_DEFECTO, ESTADOS_POST_REUNION, fechaDeDi
 import { crearMailService } from '../mail/borrador';
 import { CLUBES, ESTADOS, ESTADOS_FINALES, ESTADOS_PINGUEO_POST_REUNION } from '../shared/constants';
 import { now } from '../shared/clock';
+import { extraerMails } from '../shared/mails';
+import { mismoNombre } from '../shared/nombres';
 import type {
   Club,
   ConfigService,
@@ -31,11 +33,20 @@ export const MIN_CARACTERES_NOTAS = 100;
 // ---------- Datos que viajan al navegador ----------
 
 export interface Inicio {
-  usuario: Usuario | null; // null → no registrado
-  mail: string;
+  usuario: Usuario | null; // null → no registrado. En "ver como", el usuario elegido.
+  mail: string; // siempre el de la cuenta real
   clubes: Club[];
   hoy: string;
   avisoTriggers: string | null;
+  esAdmin: boolean; // la cuenta real es admin (muestra el selector de "ver como")
+  viendoComo: boolean; // `usuario` es otra persona elegida por el admin
+}
+
+export interface UsuarioListado {
+  mail: string;
+  nombre: string;
+  club: Club | null;
+  rol: Usuario['rol'];
 }
 
 export interface InfoEmpresa {
@@ -78,6 +89,21 @@ export interface Seguimiento {
   estadosValidos: Estado[];
 }
 
+// Vista "Equipo": todas las empresas de un club, solo lectura.
+export interface FilaEquipo {
+  club: Club;
+  empresa: string;
+  trameroEncargado: string;
+  persona: string | null;
+  mail: string | null;
+  estado: Estado | null;
+  proximaAccion: string | null;
+  fechaProximaAccion: string | null; // yyyy-mm-dd
+  fechaUltimoContacto: string | null; // yyyy-mm-dd
+  pingueosSinRespuesta: number;
+  vencida: boolean;
+}
+
 export interface ResultadoPingueo {
   seguimiento: Seguimiento;
   borradorUrl: string;
@@ -94,6 +120,8 @@ export interface DependenciasWebapp {
   archivosDeCarpeta: (carpetaId: string) => { id: string; nombre: string }[];
   triggers: { yaInstalados: () => boolean; instalar: () => void; marcarInstalados: () => void };
   ahora: () => Date;
+  // "Ver como" del admin: mail del usuario elegido, guardado por cuenta (UserProperties).
+  verComo?: { leer: () => string | null; guardar: (mail: string | null) => void };
 }
 
 function esFinal(estado: Estado | undefined): boolean {
@@ -119,11 +147,27 @@ export function aSeguimiento(f: FilaCRM, hoy: string, crm: CrmService): Seguimie
   };
 }
 
+export function aFilaEquipo(f: FilaCRM, hoy: string): FilaEquipo {
+  const fecha = f.fechaProximaAccion ? diaISO(f.fechaProximaAccion) : null;
+  return {
+    club: f.club,
+    empresa: f.empresa,
+    trameroEncargado: f.trameroEncargado,
+    persona: f.persona ?? null,
+    mail: f.mail ?? null,
+    estado: f.estado ?? null,
+    proximaAccion: f.proximaAccion ?? null,
+    fechaProximaAccion: fecha,
+    fechaUltimoContacto: f.fechaUltimoContacto ? diaISO(f.fechaUltimoContacto) : null,
+    pingueosSinRespuesta: f.pingueosSinRespuesta,
+    vencida: fecha !== null && fecha < hoy && !esFinal(f.estado),
+  };
+}
+
 // Empresas del FR con estado no final, por fecha de próxima acción (vencidas primero; sin fecha al final).
 export function armarSeguimientos(filas: FilaCRM[], fr: Usuario, hoy: string, crm: CrmService): Seguimiento[] {
-  const nombre = fr.nombre.trim().toLowerCase();
   return filas
-    .filter((f) => (f.trameroEncargado ?? '').trim().toLowerCase() === nombre && !esFinal(f.estado))
+    .filter((f) => mismoNombre(f.trameroEncargado, fr.nombre) && !esFinal(f.estado))
     .map((f) => aSeguimiento(f, hoy, crm))
     .sort((a, b) => {
       if (a.fechaProximaAccion === b.fechaProximaAccion) return 0;
@@ -136,15 +180,43 @@ export function armarSeguimientos(filas: FilaCRM[], fr: Usuario, hoy: string, cr
 export function crearEndpoints(deps: DependenciasWebapp) {
   const { crm, mail } = deps;
 
-  function usuario(): Usuario {
+  function usuarioReal(): Usuario {
     const u = deps.config.getUsuario(deps.mailActual());
     if (!u) throw new ErrorParaUsuario('No tenés acceso, pedíselo a tu coordinador.');
     return u;
   }
 
-  // El club viene precargado con el del FR; solo las codirectoras pueden elegir otro (A2).
+  // Si quien llama es admin y eligió "ver como", devuelve a la persona elegida (marcada con
+  // verComoPor = mail del admin). En cualquier otro caso, la cuenta real. Todos los endpoints
+  // pasan por acá, así que "ver como" aplica a todo sin tocarlos uno por uno.
+  function usuario(): Usuario {
+    const real = usuarioReal();
+    if (!real.admin || !deps.verComo) return real;
+    const mailElegido = deps.verComo.leer();
+    if (!mailElegido || mailElegido === real.mail) return real;
+    const elegido = deps.config.getUsuario(mailElegido);
+    if (!elegido) {
+      deps.verComo.guardar(null); // lo sacaron de _Usuarios: vuelve a su propio usuario
+      return real;
+    }
+    return { ...elegido, admin: false, verComoPor: real.mail };
+  }
+
+  function requerirAdmin(): Usuario {
+    const real = usuarioReal();
+    if (!real.admin) throw new ErrorParaUsuario('Solo un admin puede hacer esto.');
+    return real;
+  }
+
+  // Codirectoras y admin pueden actuar sobre cualquier empresa; FR y coordinadores, solo sobre las
+  // que tienen su nombre en "Tramero encargado" (las de sus compañeros solo las ven, en "Equipo").
+  function puedeActuarSobre(u: Usuario, fila: FilaCRM): boolean {
+    return u.rol === 'Codirectora' || Boolean(u.admin) || mismoNombre(fila.trameroEncargado, u.nombre);
+  }
+
+  // El club viene precargado con el del FR; solo las codirectoras y los admin pueden elegir otro (A2).
   function clubesDe(u: Usuario): Club[] {
-    if (u.rol === 'Codirectora') return [...CLUBES];
+    if (u.rol === 'Codirectora' || u.admin) return [...CLUBES];
     return u.club ? [u.club] : [];
   }
 
@@ -171,21 +243,52 @@ export function crearEndpoints(deps: DependenciasWebapp) {
     return diaISO(deps.ahora());
   }
 
-  return {
-    // A1: identifica al usuario y, al primer ingreso, instala sus triggers personales (B7).
-    inicio(): Inicio {
-      const mailActual = deps.mailActual();
-      const u = deps.config.getUsuario(mailActual);
-      let avisoTriggers: string | null = null;
-      if (u && !deps.triggers.yaInstalados()) {
-        try {
-          deps.triggers.instalar();
-          deps.triggers.marcarInstalados();
-        } catch (e) {
-          avisoTriggers = `No se pudieron instalar tus sincronizaciones automáticas: ${(e as Error).message}`;
-        }
+  // A1: identifica al usuario y, al primer ingreso, instala sus triggers personales (B7).
+  // Los triggers son siempre de la cuenta real, aunque el admin esté en "ver como".
+  function inicio(): Inicio {
+    const mailActual = deps.mailActual();
+    const real = deps.config.getUsuario(mailActual);
+    let avisoTriggers: string | null = null;
+    if (real && !deps.triggers.yaInstalados()) {
+      try {
+        deps.triggers.instalar();
+        deps.triggers.marcarInstalados();
+      } catch (e) {
+        avisoTriggers = `No se pudieron instalar tus sincronizaciones automáticas: ${(e as Error).message}`;
       }
-      return { usuario: u, mail: mailActual, clubes: u ? clubesDe(u) : [], hoy: hoy(), avisoTriggers };
+    }
+    const u = real ? usuario() : null;
+    return {
+      usuario: u,
+      mail: mailActual,
+      clubes: u ? clubesDe(u) : [],
+      hoy: hoy(),
+      avisoTriggers,
+      esAdmin: Boolean(real?.admin),
+      viendoComo: Boolean(u?.verComoPor),
+    };
+  }
+
+  return {
+    inicio,
+
+    // Admin: lista de usuarios para el selector de "ver como".
+    listarUsuarios(): UsuarioListado[] {
+      requerirAdmin();
+      return deps.config
+        .getUsuarios()
+        .map((u) => ({ mail: u.mail, nombre: u.nombre, club: u.club, rol: u.rol }))
+        .sort((a, b) => (a.club ?? '').localeCompare(b.club ?? '') || a.nombre.localeCompare(b.nombre));
+    },
+
+    // Admin: empieza a ver la app como `mail`, o vuelve a su usuario con null.
+    verComo(mail: string | null): Inicio {
+      const real = requerirAdmin();
+      if (!deps.verComo) throw new ErrorParaUsuario('"Ver como" no está disponible.');
+      const elegido = mail ? mail.trim().toLowerCase() : null;
+      if (elegido && !deps.config.getUsuario(elegido)) throw new ErrorParaUsuario(`${elegido} no está en _Usuarios.`);
+      deps.verComo.guardar(elegido && elegido !== real.mail ? elegido : null);
+      return inicio();
     },
 
     // A2
@@ -259,6 +362,17 @@ export function crearEndpoints(deps: DependenciasWebapp) {
       return reintentarBorrador(aConfirmado(p), u, mail);
     },
 
+    // Vista "Equipo": todas las empresas del club (las de todos), solo lectura. Cada uno ve su club;
+    // codirectoras y admin, cualquiera.
+    listarEquipo(club: Club): FilaEquipo[] {
+      usuarioDelClub(club);
+      const h = hoy();
+      return crm
+        .listarFilas(club)
+        .map((f) => aFilaEquipo(f, h))
+        .sort((a, b) => a.trameroEncargado.localeCompare(b.trameroEncargado) || a.empresa.localeCompare(b.empresa));
+    },
+
     // A7
     listarSeguimientos(): Seguimiento[] {
       const u = usuario();
@@ -267,20 +381,23 @@ export function crearEndpoints(deps: DependenciasWebapp) {
     },
 
     // A7: único botón de "Mis seguimientos". Genera el borrador de pingueo (con el template que
-    // corresponda según el estado) y, solo si eso sale bien, registra el pingueo en el CRM
-    // (incrementa el contador y actualiza la fecha de último contacto).
+    // corresponda según el estado). El pingueo NO se cuenta acá: lo cuenta el sync de Gmail cuando
+    // el borrador se manda (suma uno al contador y actualiza la fecha de último contacto).
     registrarPingueo(club: Club, empresa: string): ResultadoPingueo {
       const u = usuarioDelClub(club);
       const fila = crm.getFila(club, empresa.trim());
       if (!fila) throw new ErrorParaUsuario(`"${empresa}" no está en el CRM.`);
-      if (!fila.mail) throw new ErrorParaUsuario(`No se puede pinguear a ${empresa}: falta el mail de contacto.`);
+      if (!puedeActuarSobre(u, fila)) {
+        throw new ErrorParaUsuario(`${fila.empresa} la sigue ${fila.trameroEncargado || 'otra persona'}: solo esa persona puede pinguearla.`);
+      }
+      if (!extraerMails(fila.mail).length) throw new ErrorParaUsuario(`No se puede pinguear a ${empresa}: falta el mail de contacto.`);
 
+      if (esFinal(fila.estado)) throw new ErrorParaUsuario(`${empresa} ya está en un estado final (${fila.estado}).`);
       const borrador = mail.crearBorradorPingueo(
-        { club, empresa: fila.empresa, persona: fila.persona ?? null, mail: fila.mail, tipo: tipoPingueoDe(fila.estado) },
+        { club, empresa: fila.empresa, persona: fila.persona ?? null, mail: fila.mail ?? '', tipo: tipoPingueoDe(fila.estado) },
         u,
       );
-      const actualizado = crm.registrarPingueo(club, empresa, u);
-      return { seguimiento: aSeguimiento(actualizado, hoy(), crm), borradorUrl: borrador.url };
+      return { seguimiento: aSeguimiento(fila, hoy(), crm), borradorUrl: borrador.url };
     },
   };
 }
@@ -288,6 +405,7 @@ export function crearEndpoints(deps: DependenciasWebapp) {
 // ---------- Conexión con Apps Script ----------
 
 const PROPIEDAD_TRIGGERS = 'TRIGGERS_INSTALADOS';
+const PROPIEDAD_VER_COMO = 'VER_COMO';
 
 let endpoints: ReturnType<typeof crearEndpoints> | null = null;
 function api(): ReturnType<typeof crearEndpoints> {
@@ -315,6 +433,14 @@ function api(): ReturnType<typeof crearEndpoints> {
       marcarInstalados: () => PropertiesService.getUserProperties().setProperty(PROPIEDAD_TRIGGERS, '1'),
     },
     ahora: now,
+    verComo: {
+      leer: () => PropertiesService.getUserProperties().getProperty(PROPIEDAD_VER_COMO),
+      guardar: (mail) => {
+        const props = PropertiesService.getUserProperties();
+        if (mail) props.setProperty(PROPIEDAD_VER_COMO, mail);
+        else props.deleteProperty(PROPIEDAD_VER_COMO);
+      },
+    },
   });
   return endpoints;
 }
@@ -338,4 +464,7 @@ export const listarAdjuntos = conMensajeClaro('listarAdjuntos', (club: Club) => 
 export const confirmarPostReunionUI = conMensajeClaro('confirmarPostReunion', (p: PostReunionEnviado) => api().confirmarPostReunion(p));
 export const reintentarBorradorUI = conMensajeClaro('reintentarBorrador', (p: PostReunionEnviado) => api().reintentarBorrador(p));
 export const listarSeguimientos = conMensajeClaro('listarSeguimientos', () => api().listarSeguimientos());
+export const listarEquipo = conMensajeClaro('listarEquipo', (club: Club) => api().listarEquipo(club));
+export const listarUsuarios = conMensajeClaro('listarUsuarios', () => api().listarUsuarios());
+export const verComo = conMensajeClaro('verComo', (mail: string | null) => api().verComo(mail));
 export const registrarPingueo = conMensajeClaro('registrarPingueo', (club: Club, empresa: string) => api().registrarPingueo(club, empresa));

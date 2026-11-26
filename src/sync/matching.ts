@@ -3,6 +3,7 @@
 // para poder testearla con Jest.
 
 import { normalizarNombreEmpresa } from '../crm/repo';
+import { extraerMails } from './mailsContacto';
 import type { FilaCRM } from '../shared/types';
 
 export function dominioDeMail(mail: string): string {
@@ -19,10 +20,8 @@ export function empresaCoincideConEvento(
   tituloEvento: string,
   mailsInvitados: string[],
 ): boolean {
-  if (fila.mail) {
-    const dominioFila = dominioDeMail(fila.mail);
-    if (dominioFila && mailsInvitados.some((m) => dominioDeMail(m) === dominioFila)) return true;
-  }
+  const dominiosFila = extraerMails(fila.mail).map(dominioDeMail).filter(Boolean);
+  if (dominiosFila.length && mailsInvitados.some((m) => dominiosFila.includes(dominioDeMail(m)))) return true;
   const empresaNorm = normalizarNombreEmpresa(fila.empresa);
   if (!empresaNorm) return false;
   return normalizarNombreEmpresa(tituloEvento).includes(empresaNorm);

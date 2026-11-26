@@ -6,7 +6,12 @@
 
     var CAMPOS_TEXTO = ['persona', 'rolPersona', 'mail', 'telefono', 'linkedin', 'proximaAccion', 'fechaProximaAccion', 'parrafoCompromisos', 'comentarios'];
     var MIN_NOTAS = 100;
-    var MAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    var MAIL_RE = /^[^\s@,;\/]+@[^\s@,;\/]+\.[^\s@,;\/]+$/;
+    // Uno o varios mails separados por coma, ";", "/" o espacios (igual que validarListaMails en el servidor).
+    function mailsValidos(texto) {
+      var partes = String(texto || '').split(/[\s,;\/]+/).filter(Boolean);
+      return partes.length > 0 && partes.every(function (p) { return MAIL_RE.test(p); });
+    }
     var SVG_NS = 'http://www.w3.org/2000/svg';
 
     // Club → forma del manual de marca (ver brand.html). Agro y Trama Lab no están en el manual.
@@ -19,7 +24,10 @@
       '': 'trama'
     };
 
-    var st = { ctx: null, info: null, solicitud: null, resultado: null, ultimo: null, seguimientos: [], filtro: 'todos', sugerencia: -1, seq: { buscar: 0, info: 0, preview: 0 } };
+    var ESTADOS_ORDEN = ['Mail enviado', 'Mail respondido', 'FR viejo mando el mail de traspaso', 'Respondió traspaso',
+      'Reunión coordinada', 'Tuvimos reunión, esperando respuesta', 'Tratativas', 'Va a ser sponsor', 'No va a ser sponsor'];
+
+    var st = { equipo: [], equipoClub: null, ctx: null, info: null, solicitud: null, resultado: null, ultimo: null, seguimientos: [], filtro: 'todos', sugerencia: -1, seq: { buscar: 0, info: 0, preview: 0 } };
 
     // ---------- utilidades ----------
     function $(id) { return document.getElementById(id); }
@@ -96,20 +104,85 @@
           mostrar($('acceso-denegado'), true);
           return;
         }
-        var u = ctx.usuario;
-        $('u-nombre').textContent = u.nombre;
-        $('u-rol').textContent = u.rol;
-        $('hola-nombre').textContent = String(u.nombre).split(' ')[0];
-        mostrar($('usuario'), true);
-        aplicarClub(u.club);
         if (ctx.avisoTriggers) $('avisos-globales').appendChild(el('div', { clase: 'aviso aviso--info', style: 'margin-bottom:16px', texto: ctx.avisoTriggers }));
         iniciarPaso1();
         iniciarPaso2();
         iniciarPestanas();
         iniciarSeguimientos();
+        iniciarEquipo();
+        iniciarVerComo();
+        aplicarUsuario();
         mostrar($('app'), true);
         cargarSeguimientos(); // para la cuenta de vencidos en la pestaña
       }).catch(function (e) { $('cargando-inicial').textContent = 'No se pudo cargar la app: ' + msg(e); });
+    }
+
+    // Todo lo que depende del usuario (o del usuario elegido en "ver como"). Se vuelve a correr
+    // al cambiar de usuario, sin recargar la página.
+    function aplicarUsuario() {
+      var u = st.ctx.usuario;
+      $('u-nombre').textContent = u.nombre;
+      $('u-rol').textContent = u.rol;
+      $('hola-nombre').textContent = String(u.nombre).split(' ')[0];
+      mostrar($('usuario'), true);
+      aplicarClub(u.club);
+
+      var club = $('p1-club');
+      club.innerHTML = '';
+      st.ctx.clubes.forEach(function (c) { club.appendChild(el('option', { value: c, texto: c })); });
+      if (u.club) club.value = u.club;
+      var eligeClub = u.rol === 'Codirectora' || u.admin; // editable solo para codirectoras y admin
+      club.disabled = !eligeClub;
+      $('p1-club-ayuda').textContent = eligeClub ? 'Podés cargar para cualquier club.' : $('p1-club-ayuda').getAttribute('data-original');
+
+      // Vista "Equipo": club propio; codirectoras y admin eligen cualquiera.
+      var eqClub = $('eq-club');
+      eqClub.innerHTML = '';
+      st.ctx.clubes.forEach(function (c) { eqClub.appendChild(el('option', { value: c, texto: c })); });
+      if (u.club) eqClub.value = u.club;
+      mostrar($('eq-club-campo'), st.ctx.clubes.length > 1);
+      st.equipo = [];
+      st.equipoClub = null;
+
+      if (st.ctx.esAdmin) {
+        mostrar($('ver-como'), true);
+        $('ver-como-texto').textContent = st.ctx.viendoComo ? 'Estás viendo la app como otra persona. Lo que guardes queda a su nombre:' : 'Ver la app como:';
+        mostrar($('ver-como-volver'), st.ctx.viendoComo);
+        $('ver-como-usuario').value = st.ctx.viendoComo ? u.mail : st.ctx.mail;
+      }
+    }
+
+    // ---------- Admin: ver como ----------
+    function iniciarVerComo() {
+      if (!st.ctx.esAdmin) return;
+      var sel = $('ver-como-usuario');
+      llamar('listarUsuarios').then(function (lista) {
+        lista.forEach(function (x) {
+          sel.appendChild(el('option', { value: x.mail, texto: x.nombre + ' · ' + x.rol + (x.club ? ' · ' + x.club : '') }));
+        });
+        sel.value = st.ctx.viendoComo ? st.ctx.usuario.mail : st.ctx.mail;
+      }).catch(function (e) { error('seg-error', msg(e)); });
+      sel.addEventListener('change', function () { cambiarUsuario(sel.value === st.ctx.mail ? null : sel.value); });
+      $('ver-como-volver').addEventListener('click', function () { cambiarUsuario(null); });
+    }
+
+    function cambiarUsuario(mail) {
+      var sel = $('ver-como-usuario');
+      sel.disabled = true;
+      llamar('verComo', mail).then(function (ctx) {
+        st.ctx = ctx;
+        st.seguimientos = [];
+        $('p1-empresa').value = '';
+        $('p1-notas').value = '';
+        actualizarContador();
+        limpiarInfo();
+        irA('paso1');
+        aplicarUsuario();
+        cargarSeguimientos();
+        if (!$('panel-equipo').hidden) cargarEquipo();
+      }).catch(function (e) {
+        $('avisos-globales').appendChild(el('div', { clase: 'aviso aviso--error', style: 'margin-bottom:16px', texto: msg(e) }));
+      }).then(function () { sel.disabled = false; });
     }
 
     function iniciarPestanas() {
@@ -121,18 +194,15 @@
             mostrar($(t.getAttribute('aria-controls')), activa);
           });
           if (b.id === 'tab-seg') cargarSeguimientos();
+          if (b.id === 'tab-equipo') cargarEquipo();
         });
       });
     }
 
     // ---------- A2: paso 1 ----------
     function iniciarPaso1() {
-      var club = $('p1-club');
-      st.ctx.clubes.forEach(function (c) { club.appendChild(el('option', { value: c, texto: c })); });
-      if (st.ctx.usuario.rol === 'Codirectora') { // editable solo para codirectoras
-        club.disabled = false;
-        $('p1-club-ayuda').textContent = 'Como codirectora, podés cargar para cualquier club.';
-      }
+      var club = $('p1-club'); // opciones y si es editable: aplicarUsuario()
+      $('p1-club-ayuda').setAttribute('data-original', $('p1-club-ayuda').textContent);
       club.addEventListener('change', function () {
         aplicarClub(club.value);
         $('p1-empresa').value = '';
@@ -416,7 +486,7 @@
       var errores = [];
       if (!$('p2-estado').value) errores.push('Elegí un estado válido.');
       if (!p.datos.mail) errores.push('Falta el mail del contacto.');
-      else if (!MAIL_RE.test(p.datos.mail)) errores.push('El mail del contacto no es válido.');
+      else if (!mailsValidos(p.datos.mail)) errores.push('Algún mail del contacto no es válido.');
       if (p.datos.fechaProximaAccion && p.datos.fechaProximaAccion < p.fechaReunion) errores.push('La fecha de próxima acción no puede ser anterior a la reunión.');
       return errores;
     }
@@ -548,6 +618,83 @@
         ]),
       ]);
       return li;
+    }
+
+    // ---------- Vista "Equipo" (solo lectura) ----------
+    function iniciarEquipo() {
+      var estado = $('eq-estado');
+      ESTADOS_ORDEN.forEach(function (e) { estado.appendChild(el('option', { value: e, texto: e })); });
+      $('eq-club').addEventListener('change', cargarEquipo);
+      $('eq-tramero').addEventListener('change', renderEquipo);
+      estado.addEventListener('change', renderEquipo);
+      $('eq-buscar').addEventListener('input', debounce(renderEquipo, 200));
+    }
+
+    function cargarEquipo() {
+      var club = $('eq-club').value;
+      if (!club) return;
+      error('eq-error', '');
+      if (st.equipoClub !== club) { st.equipo = []; renderEquipo(); }
+      mostrar($('eq-mensaje'), true);
+      llamar('listarEquipo', club).then(function (lista) {
+        st.equipo = lista;
+        st.equipoClub = club;
+        var sel = $('eq-tramero');
+        var actual = sel.value;
+        sel.innerHTML = '';
+        sel.appendChild(el('option', { value: '', texto: 'Todos' }));
+        lista.map(function (f) { return f.trameroEncargado || ''; })
+          .filter(function (n, i, arr) { return arr.indexOf(n) === i; })
+          .sort()
+          .forEach(function (n) { sel.appendChild(el('option', { value: n, texto: n || 'Sin encargado' })); });
+        sel.value = actual;
+        if (sel.value !== actual) sel.value = '';
+        renderEquipo();
+      }).catch(function (e) {
+        error('eq-error', msg(e));
+      }).then(function () { mostrar($('eq-mensaje'), false); });
+    }
+
+    function renderEquipo() {
+      var tramero = $('eq-tramero').value;
+      var estado = $('eq-estado').value;
+      var texto = $('eq-buscar').value.trim().toLowerCase();
+      var lista = st.equipo.filter(function (f) {
+        if (tramero && (f.trameroEncargado || '') !== tramero) return false;
+        if (estado && f.estado !== estado) return false;
+        if (texto && f.empresa.toLowerCase().indexOf(texto) === -1) return false;
+        return true;
+      });
+      var ul = $('lista-equipo');
+      ul.innerHTML = '';
+      lista.forEach(function (f) { ul.appendChild(filaEquipo(f)); });
+      $('eq-cuenta').textContent = st.equipoClub ? lista.length + ' de ' + st.equipo.length + ' empresas' : '';
+      mostrar($('eq-vacio'), !!st.equipoClub && lista.length === 0);
+    }
+
+    function filaEquipo(f) {
+      var p = Math.min(3, f.pingueosSinRespuesta || 0);
+      var puntos = [0, 1, 2].map(function (i) { return el('i', { clase: i < p ? 'on' : '' }); });
+      var contacto = [f.persona, f.mail].filter(Boolean).join(' · ');
+      return el('li', { clase: 'seg ' + (f.vencida ? 'vencido' : '') }, [
+        el('span', { clase: 'franja' }),
+        el('div', {}, [
+          el('div', { style: 'display:flex;gap:10px;align-items:center;flex-wrap:wrap' }, [
+            el('span', { clase: 'empresa', texto: f.empresa }),
+            el('span', { clase: 'estado', 'data-estado': f.estado || '', texto: f.estado || 'Sin estado' }),
+          ]),
+          el('div', { clase: 'detalle' }, [
+            el('span', { texto: 'A cargo de ' + (f.trameroEncargado || 'nadie') }),
+            contacto ? el('span', { texto: contacto }) : null,
+          ]),
+          el('div', { clase: 'detalle' }, [
+            el('span', { texto: f.proximaAccion || 'Sin próxima acción' }),
+            el('span', { clase: 'fecha', texto: fechaCorta(f.fechaProximaAccion) }),
+            el('span', { texto: 'Último contacto: ' + fechaLegible(f.fechaUltimoContacto) }),
+            el('span', { clase: 'pingueos', title: (f.pingueosSinRespuesta || 0) + ' pingueos sin respuesta' }, puntos),
+          ]),
+        ]),
+      ]);
     }
 
     // Genera el borrador de pingueo (A elige el template según el estado, ver app/webapp.ts) y

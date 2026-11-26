@@ -6,9 +6,9 @@
 import { crearConfigService } from '../crm/config';
 import { crearCrmService } from '../crm/repo';
 import { now, setDemoNow } from '../shared/clock';
-import { CLUBES, PARAMETROS } from '../shared/constants';
+import { PARAMETROS } from '../shared/constants';
 import type { Aviso, Club, ConfigService, CrmService } from '../shared/types';
-import { esDiaDeEnvio, esLunes } from './calendarioEnvios';
+import { diaDeSemanaDesdeTexto, esDiaDeEnvio, esDiaSemana, esLunes } from './calendarioEnvios';
 import { evaluarEscalamientos } from './escalamiento';
 import { enviarMails } from './notificadorMail';
 import { tarjetaResumenCodis, tarjetaResumenCoordinador, type Tarjeta } from './plantillaMail';
@@ -23,9 +23,16 @@ import {
 } from './resumenes';
 
 const UN_DIA_MS = 86_400_000;
+const DIA_ENVIO_FR_POR_DEFECTO = 1; // lunes
+
+// Día de la semana del mail a los FR (DIA_ENVIO_FR en _Parametros, ej. "LUN").
+function diaEnvioFr(config: ConfigService): number {
+  return diaDeSemanaDesdeTexto(config.getParametroTexto(PARAMETROS.DIA_ENVIO_FR)) ?? DIA_ENVIO_FR_POR_DEFECTO;
+}
 
 function leerParametros(config: ConfigService): ParametrosReglas {
   return {
+    diaEnvioFr: diaEnvioFr(config),
     diasPingueoMail: config.getParametro(PARAMETROS.DIAS_PINGUEO_MAIL),
     diasCoordinar: config.getParametro(PARAMETROS.DIAS_COORDINAR),
     horasCargaPost: config.getParametro(PARAMETROS.HORAS_CARGA_POST),
@@ -46,6 +53,7 @@ function construirAvisosResumenSemanal(
   config: ConfigService,
   crm: CrmService,
   ahora: Date,
+  clubes: Club[],
 ): { avisos: Aviso[]; tarjetas: Map<string, Tarjeta> } {
   const finSemanaActual = ahora;
   const inicioSemanaActual = new Date(ahora.getTime() - 7 * UN_DIA_MS);
@@ -55,7 +63,7 @@ function construirAvisosResumenSemanal(
   const tarjetas = new Map<string, Tarjeta>();
   const resumenesPorClub: ResumenCoordinador[] = [];
 
-  for (const club of CLUBES) {
+  for (const club of clubes) {
     const filas = crm.listarFilas(club);
     const eventosActuales = crm.getEventos(inicioSemanaActual, finSemanaActual, club);
     const eventosAnteriores = crm.getEventos(inicioSemanaAnterior, inicioSemanaActual, club);
@@ -108,25 +116,32 @@ export function instalarTriggersCentrales(): void {
   ScriptApp.newTrigger('ejecutarEnvioAgendaYAvisos').timeBased().everyDays(1).atHour(9).create();
 }
 
-// El trigger corre todos los días a las 9; la función se autolimita a lunes/miércoles/viernes
-// (sección 7, C4) salvo que la llame el modo demo con forzar=true.
+// El trigger corre todos los días a las 9. Solo procesa los clubes activos (_Clubes.activo):
+// - Avisos a cada FR: una vez por semana, el día DIA_ENVIO_FR (por defecto lunes).
+// - Escalamientos a coordinadores: lunes, miércoles y viernes.
+// - Resumen semanal a coordinadores y codirectoras: lunes.
+// Con forzar=true (modo demo) manda todo en el momento.
 export function ejecutarEnvioAgendaYAvisos(forzar = false): void {
   const ahora = now();
-  if (!forzar && !esDiaDeEnvio(ahora)) return;
-
   const config = crearConfigService();
+  const diaFr = forzar || esDiaSemana(ahora, diaEnvioFr(config));
+  const diaEscalamientos = forzar || esDiaDeEnvio(ahora);
+  const diaResumen = forzar || esLunes(ahora);
+  if (!diaFr && !diaEscalamientos && !diaResumen) return;
+
   const crm = crearCrmService();
   const parametros = leerParametros(config);
+  const clubes = config.getClubesActivos();
 
   const avisosPorNombre: Aviso[] = [];
-  for (const club of CLUBES) {
+  for (const club of clubes) {
     const filas = crm.listarFilas(club);
-    avisosPorNombre.push(...evaluarReglas(filas, ahora, parametros));
-    avisosPorNombre.push(...evaluarEscalamientos(filas, ahora, parametros));
+    if (diaFr) avisosPorNombre.push(...evaluarReglas(filas, ahora, parametros));
+    if (diaEscalamientos) avisosPorNombre.push(...evaluarEscalamientos(filas, ahora, parametros));
   }
   const avisosResueltos = resolverDestinatarios(avisosPorNombre, config.getUsuarios());
 
-  const resumenes = esLunes(ahora) ? construirAvisosResumenSemanal(config, crm, ahora) : { avisos: [], tarjetas: new Map<string, Tarjeta>() };
+  const resumenes = diaResumen ? construirAvisosResumenSemanal(config, crm, ahora, clubes) : { avisos: [], tarjetas: new Map<string, Tarjeta>() };
 
   const avisos = [...avisosResueltos, ...resumenes.avisos];
   if (avisos.length === 0) return;

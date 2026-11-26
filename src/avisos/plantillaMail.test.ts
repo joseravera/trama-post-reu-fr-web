@@ -28,6 +28,8 @@ const RESUMEN: ResumenCoordinador = {
   embudo: {
     'Mail enviado': 12,
     'Mail respondido': 4,
+    'FR viejo mando el mail de traspaso': 0,
+    'Respondió traspaso': 0,
     'Reunión coordinada': 3,
     'Tuvimos reunión, esperando respuesta': 2,
     Tratativas: 2,

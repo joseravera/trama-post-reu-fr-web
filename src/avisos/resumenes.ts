@@ -40,7 +40,7 @@ function esSeguimientoVencido(fila: FilaCRM, ahora: Date): boolean {
 function construirEmbudo(filas: FilaCRM[]): Record<Estado, number> {
   const embudo = Object.fromEntries(ESTADOS.map((estado) => [estado, 0])) as Record<Estado, number>;
   for (const fila of filas) {
-    if (fila.estado) embudo[fila.estado] += 1;
+    if (fila.estado && fila.estado in embudo) embudo[fila.estado] += 1; // ignora estados escritos a mano que no existen
   }
   return embudo;
 }

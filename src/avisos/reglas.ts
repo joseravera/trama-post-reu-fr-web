@@ -10,7 +10,8 @@
 
 import { diferenciaDiasEnZona } from '../mail/fechas';
 import type { Aviso, Club, Estado, FilaCRM, Usuario } from '../shared/types';
-import { proximoEnvio } from './calendarioEnvios';
+import { mismoNombre } from '../shared/nombres';
+import { proximoDiaSemana, proximoEnvio } from './calendarioEnvios';
 
 export interface ParametrosReglas {
   diasPingueoMail: number;
@@ -20,6 +21,14 @@ export interface ParametrosReglas {
   diasTratativasEscala: number;
   pingueosEscala: number;
   diasVencidoEscala: number;
+  // Día de la semana del mail a los FR (0 = domingo). Si está, la ventana de "lo que vence
+  // antes del próximo mail" llega hasta ese día de la semana siguiente; si no, hasta el próximo
+  // día de envío (lun/mié/vie).
+  diaEnvioFr?: number;
+}
+
+function finDeVentana(ahora: Date, parametros: ParametrosReglas): Date {
+  return parametros.diaEnvioFr === undefined ? proximoEnvio(ahora) : proximoDiaSemana(ahora, parametros.diaEnvioFr);
 }
 
 function clave(tipo: Aviso['tipo'], fila: FilaCRM, fecha: Date): string {
@@ -47,8 +56,26 @@ function evaluarCargarPostReunion(fila: FilaCRM, ahora: Date, parametros: Parame
 }
 
 function evaluarPinguear(fila: FilaCRM, ahora: Date, parametros: ParametrosReglas): Aviso | null {
-  if (!fila.fechaUltimoContacto) return null;
-  const dias = diferenciaDiasEnZona(fila.fechaUltimoContacto, ahora);
+  // Las filas de traspaso solo tienen "Fecha primer contacto": se usa esa si no hay último contacto.
+  const ultimoContacto = fila.fechaUltimoContacto ?? fila.fechaPrimerContacto;
+  if (!ultimoContacto) return null;
+  const dias = diferenciaDiasEnZona(ultimoContacto, ahora);
+  if (fila.estado === 'FR viejo mando el mail de traspaso' && dias >= parametros.diasPingueoMail) {
+    return avisoParaFr(
+      'PINGUEAR',
+      fila,
+      ahora,
+      `Pingueá a ${fila.empresa}: el FR anterior mandó el mail de traspaso hace ${dias} días y no respondieron.`,
+    );
+  }
+  if (fila.estado === 'Respondió traspaso' && dias >= parametros.diasCoordinar) {
+    return avisoParaFr(
+      'PINGUEAR',
+      fila,
+      ahora,
+      `Pingueá a ${fila.empresa} para coordinar la reunión: respondieron el traspaso hace ${dias} días y no se coordinó nada.`,
+    );
+  }
   if (fila.estado === 'Mail enviado' && dias >= parametros.diasPingueoMail) {
     return avisoParaFr(
       'PINGUEAR',
@@ -74,7 +101,7 @@ function evaluarPinguear(fila: FilaCRM, ahora: Date, parametros: ParametrosRegla
 function evaluarSeguimientoVencido(fila: FilaCRM, ahora: Date, parametros: ParametrosReglas): Aviso | null {
   if (!fila.estado || !ESTADOS_DE_SEGUIMIENTO.includes(fila.estado)) return null;
 
-  const finVentana = proximoEnvio(ahora);
+  const finVentana = finDeVentana(ahora, parametros);
 
   if (fila.fechaProximaAccion) {
     if (fila.fechaProximaAccion.getTime() > finVentana.getTime()) return null;
@@ -101,15 +128,23 @@ function evaluarSeguimientoVencido(fila: FilaCRM, ahora: Date, parametros: Param
 // FilaCRM no distingue si la "próxima acción" es un compromiso de Trama o una tarea genérica
 // del FR (A6: los compromisos de Trama se cargan ahí mismo). Para no duplicar el aviso de
 // SEGUIMIENTO_VENCIDO, esta regla solo mira los estados que esa otra regla no cubre.
-function evaluarCompromisoTrama(fila: FilaCRM, ahora: Date): Aviso | null {
+// Con mail semanal (diaEnvioFr), avisa todo lo que vence desde hoy hasta el próximo mail; si
+// no, solo lo que vence mañana.
+function evaluarCompromisoTrama(fila: FilaCRM, ahora: Date, parametros: ParametrosReglas): Aviso | null {
   if (!fila.estado || ESTADOS_DE_SEGUIMIENTO.includes(fila.estado)) return null;
   if (!fila.fechaProximaAccion) return null;
-  if (diferenciaDiasEnZona(ahora, fila.fechaProximaAccion) !== 1) return null;
+  const dias = diferenciaDiasEnZona(ahora, fila.fechaProximaAccion); // días que faltan
+  if (parametros.diaEnvioFr === undefined) {
+    if (dias !== 1) return null;
+  } else if (dias < 0 || fila.fechaProximaAccion.getTime() > finDeVentana(ahora, parametros).getTime()) {
+    return null;
+  }
+  const cuando = dias === 0 ? 'Hoy vence' : dias === 1 ? 'Mañana vence' : `En ${dias} días vence`;
   return avisoParaFr(
     'COMPROMISO_TRAMA',
     fila,
     fila.fechaProximaAccion,
-    `Mañana vence "${fila.proximaAccion ?? 'un compromiso'}" con ${fila.empresa}.`,
+    `${cuando} "${fila.proximaAccion ?? 'un compromiso'}" con ${fila.empresa}.`,
   );
 }
 
@@ -120,7 +155,7 @@ export function evaluarReglas(filas: FilaCRM[], ahora: Date, parametros: Paramet
       evaluarCargarPostReunion(fila, ahora, parametros),
       evaluarPinguear(fila, ahora, parametros),
       evaluarSeguimientoVencido(fila, ahora, parametros),
-      evaluarCompromisoTrama(fila, ahora),
+      evaluarCompromisoTrama(fila, ahora, parametros),
     ]) {
       if (aviso) avisos.push(aviso);
     }
@@ -134,8 +169,9 @@ export const TIPOS_PARA_CLUB: Aviso['tipo'][] = ['ESCALAMIENTO', 'RESUMEN_COORDI
 
 function mailDeFr(nombre: string, club: Club | undefined, usuarios: Usuario[]): string | null {
   const candidato =
-    usuarios.find((u) => u.rol === 'FR' && u.club === club && u.nombre === nombre) ??
-    usuarios.find((u) => u.nombre === nombre);
+    usuarios.find((u) => u.rol === 'FR' && u.club === club && mismoNombre(u.nombre, nombre)) ??
+    usuarios.find((u) => u.club === club && mismoNombre(u.nombre, nombre)) ??
+    usuarios.find((u) => mismoNombre(u.nombre, nombre));
   return candidato?.mail ?? null;
 }
 

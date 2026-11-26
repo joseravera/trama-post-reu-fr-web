@@ -8,6 +8,7 @@ import { crearFakeMailService } from './fakes/fakeMailService';
 const USUARIOS: Usuario[] = [
   { mail: 'juana@itba.edu.ar', nombre: 'Juana Pérez', club: 'Agro', rol: 'FR' },
   { mail: 'codi@itba.edu.ar', nombre: 'Ana', club: null, rol: 'Codirectora' },
+  { mail: 'admin@itba.edu.ar', nombre: 'Josefina Ravera', club: 'Emprendedores', rol: 'Coordinador', admin: true },
 ];
 
 const config: ConfigService = {
@@ -21,7 +22,14 @@ const config: ConfigService = {
     templatePingueoPostReunionDocId: 'doc-pingueo-post-reunion',
   }),
   getParametro: () => 0,
+  getParametroTexto: () => null,
+  getClubesActivos: () => ['Agro'],
 };
+
+function fakeVerComo() {
+  let mail: string | null = null;
+  return { leer: () => mail, guardar: (m: string | null) => { mail = m; } };
+}
 
 const FILAS: FilaCRM[] = [
   { club: 'Agro', empresa: 'AgroTech SA', trameroEncargado: 'Juana Pérez', estado: 'Reunión coordinada', pingueosSinRespuesta: 1, fechaProximaAccion: fechaDeDia('2026-11-25') },
@@ -62,6 +70,7 @@ function armar(mail = 'juana@itba.edu.ar', parcial: Partial<DependenciasWebapp> 
     archivosDeCarpeta: (id) => [{ id: `${id}-1`, nombre: 'Casos de éxito.pdf' }],
     triggers: { yaInstalados: () => instalados, instalar, marcarInstalados: () => { instalados = true; } },
     ahora: () => new Date('2026-11-20T15:00:00Z'),
+    verComo: fakeVerComo(),
     ...parcial,
   };
   return { api: crearEndpoints(deps), crm, instalar };
@@ -158,12 +167,13 @@ describe('A7: mis seguimientos', () => {
     expect(lista.map((s) => s.vencida)).toEqual([true, false, false]);
   });
 
-  it('genera el borrador de pingueo de "primer contacto" y registra el pingueo en el CRM', () => {
+  it('genera el borrador de pingueo de "primer contacto" sin contarlo todavía en el CRM', () => {
     const { api, crm } = armar();
     const r = api.registrarPingueo('Agro', 'Granos Unidos'); // estado: 'Mail enviado' -> todavía no hubo reunión
     expect(r.borradorUrl).toMatch(/PRIMER_CONTACTO/);
-    expect(r.seguimiento.pingueosSinRespuesta).toBe(1);
-    expect(crm.getFila('Agro', 'Granos Unidos')?.pingueosSinRespuesta).toBe(1);
+    // El pingueo se cuenta cuando se manda el borrador (lo hace el sync de Gmail), no al crearlo.
+    expect(r.seguimiento.pingueosSinRespuesta).toBe(0);
+    expect(crm.getFila('Agro', 'Granos Unidos')?.pingueosSinRespuesta).toBe(0);
   });
 
   it('genera el borrador de pingueo "post reunión" cuando ya hubo reunión y no respondió', () => {
@@ -175,5 +185,77 @@ describe('A7: mis seguimientos', () => {
   it('no se puede pinguear sin el mail del contacto', () => {
     const { api } = armar();
     expect(() => api.registrarPingueo('Agro', 'AgroTech SA')).toThrow(/falta el mail de contacto/);
+  });
+});
+
+describe('Admin y "ver como"', () => {
+  it('el admin elige cualquier club y ve el selector', () => {
+    const ini = armar('admin@itba.edu.ar').api.inicio();
+    expect(ini.esAdmin).toBe(true);
+    expect(ini.viendoComo).toBe(false);
+    expect(ini.clubes).toHaveLength(5);
+    expect(ini.usuario?.club).toBe('Emprendedores');
+  });
+
+  it('puede ver la app como un FR: su club y sus seguimientos, y lo que guarda queda marcado', () => {
+    const { api, crm } = armar('admin@itba.edu.ar');
+    const ini = api.verComo('juana@itba.edu.ar');
+    expect(ini.viendoComo).toBe(true);
+    expect(ini.mail).toBe('admin@itba.edu.ar');
+    expect(ini.usuario).toMatchObject({ nombre: 'Juana Pérez', club: 'Agro', admin: false, verComoPor: 'admin@itba.edu.ar' });
+    expect(ini.clubes).toEqual(['Agro']);
+    expect(api.listarSeguimientos().map((s) => s.empresa)).toContain('AgroTech SA');
+    expect(() => api.buscarEmpresas('Emprendedores', 'a')).toThrow(/No podés operar/);
+
+    const spy = jest.spyOn(crm, 'aplicarPostReunion');
+    const r = api.procesarNotas({ club: 'Agro', empresa: 'AgroTech SA', fechaReunion: '2026-11-18', notas: NOTAS });
+    api.confirmarPostReunion({ club: 'Agro', empresa: 'AgroTech SA', fechaReunion: '2026-11-18', datos: r.extraccion, adjuntosExtra: [] });
+    expect(spy.mock.calls[0][1]).toMatchObject({ nombre: 'Juana Pérez', verComoPor: 'admin@itba.edu.ar' });
+  });
+
+  it('"volver" restaura su usuario', () => {
+    const { api } = armar('admin@itba.edu.ar');
+    api.verComo('juana@itba.edu.ar');
+    const ini = api.verComo(null);
+    expect(ini.viendoComo).toBe(false);
+    expect(ini.usuario?.nombre).toBe('Josefina Ravera');
+  });
+
+  it('no se puede ver como alguien que no está en _Usuarios', () => {
+    expect(() => armar('admin@itba.edu.ar').api.verComo('nadie@itba.edu.ar')).toThrow(/no está en _Usuarios/);
+  });
+
+  it('un usuario no admin no puede usar "ver como" ni listar usuarios', () => {
+    const { api } = armar();
+    expect(() => api.verComo('codi@itba.edu.ar')).toThrow(/Solo un admin/);
+    expect(() => api.listarUsuarios()).toThrow(/Solo un admin/);
+  });
+
+  it('si a un no admin le quedó un "ver como" guardado, se ignora', () => {
+    const verComo = fakeVerComo();
+    verComo.guardar('codi@itba.edu.ar');
+    const ini = armar('juana@itba.edu.ar', { verComo }).api.inicio();
+    expect(ini.usuario?.nombre).toBe('Juana Pérez');
+    expect(ini.clubes).toEqual(['Agro']);
+  });
+});
+
+describe('Vista "Equipo" (solo lectura)', () => {
+  it('un FR ve todas las empresas de su club, incluidas las de sus compañeros y las finales', () => {
+    const lista = armar().api.listarEquipo('Agro');
+    expect(lista.map((f) => f.empresa)).toEqual(['AgroTech SA', 'Campo Verde', 'Granos Unidos', 'Sin Fecha SRL', 'De Pedro']);
+    expect(lista.find((f) => f.empresa === 'De Pedro')?.trameroEncargado).toBe('Pedro');
+    expect(JSON.parse(JSON.stringify(lista))).toEqual(lista);
+  });
+
+  it('no puede ver otro club; la codirectora sí', () => {
+    expect(() => armar().api.listarEquipo('Consultoría')).toThrow(/No podés operar/);
+    expect(armar('codi@itba.edu.ar').api.listarEquipo('Agro')).toHaveLength(5);
+  });
+
+  it('un FR no puede pinguear una empresa de un compañero; la codirectora sí', () => {
+    const fr = armar().api;
+    expect(() => fr.registrarPingueo('Agro', 'De Pedro')).toThrow(/la sigue Pedro/);
+    expect(() => armar('codi@itba.edu.ar').api.registrarPingueo('Agro', 'De Pedro')).not.toThrow(/la sigue/);
   });
 });

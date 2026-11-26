@@ -1,4 +1,4 @@
-import { esDiaDeEnvio, esLunes, proximoEnvio } from './calendarioEnvios';
+import { diaDeSemanaDesdeTexto, esDiaDeEnvio, esDiaSemana, esLunes, proximoDiaSemana, proximoEnvio } from './calendarioEnvios';
 
 describe('esDiaDeEnvio', () => {
   it('lunes, miércoles y viernes son días de envío', () => {
@@ -34,5 +34,22 @@ describe('proximoEnvio', () => {
   it('de un día que no es de envío (sábado) salta al próximo lunes', () => {
     const resultado = proximoEnvio(new Date('2026-11-21T09:00:00-03:00'));
     expect(resultado.getUTCDate()).toBe(23);
+  });
+});
+
+describe('día de envío a los FR (DIA_ENVIO_FR)', () => {
+  it('entiende abreviaturas y nombres con o sin tilde', () => {
+    expect(diaDeSemanaDesdeTexto('LUN')).toBe(1);
+    expect(diaDeSemanaDesdeTexto('miércoles')).toBe(3);
+    expect(diaDeSemanaDesdeTexto('Sábado')).toBe(6);
+    expect(diaDeSemanaDesdeTexto('xx')).toBeNull();
+    expect(diaDeSemanaDesdeTexto(null)).toBeNull();
+  });
+
+  it('esDiaSemana y proximoDiaSemana: de lunes a lunes hay una semana', () => {
+    const lunes = new Date('2026-11-23T09:00:00-03:00');
+    expect(esDiaSemana(lunes, 1)).toBe(true);
+    expect(esDiaSemana(new Date('2026-11-25T09:00:00-03:00'), 1)).toBe(false);
+    expect(proximoDiaSemana(lunes, 1).getUTCDate()).toBe(30);
   });
 });

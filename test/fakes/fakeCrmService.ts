@@ -2,7 +2,7 @@
 // Implementa la máquina de estados real (crm/maquinaEstados.ts) para que el fake se comporte
 // igual que el servicio final.
 
-import { transicionValida as transicionValidaReal } from '../../src/crm/maquinaEstados';
+import { estadoAlEscribirEncargado, estadoAlMandarResumen, estadoAlResponder, transicionValida as transicionValidaReal } from '../../src/crm/maquinaEstados';
 import type {
   Club,
   CrmService,
@@ -18,6 +18,19 @@ export function crearFakeCrmService(filasIniciales: FilaCRM[] = []): CrmService 
   const eventos: Evento[] = [];
 
   const clave = (club: Club, empresa: string) => `${club}|${empresa}`;
+
+  function cambiarPorMail(club: Club, empresa: string, fr: Usuario, fecha: Date, siguiente: (e: Estado | undefined) => Estado | undefined): FilaCRM {
+    const fila = filas.get(clave(club, empresa));
+    if (!fila) throw new Error('Empresa no encontrada');
+    const nuevo = siguiente(fila.estado);
+    if (nuevo === fila.estado) return fila;
+    const anterior = fila.estado;
+    fila.estado = nuevo;
+    fila.pingueosSinRespuesta = 0;
+    fila.fechaUltimoContacto = fecha;
+    eventos.push({ timestamp: new Date(), club, empresa, fr: fr.nombre, tipo: 'CAMBIO_ESTADO', estadoAnterior: anterior, estadoNuevo: nuevo, origen: 'GMAIL' });
+    return fila;
+  }
 
   return {
     buscarEmpresas(club, texto) {
@@ -68,20 +81,28 @@ export function crearFakeCrmService(filasIniciales: FilaCRM[] = []): CrmService 
       });
       return fila;
     },
-    registrarPingueo(club, empresa, fr) {
+    registrarPingueo(club, empresa, fr, fecha, origen = 'UI') {
       const fila = filas.get(clave(club, empresa));
       if (!fila) throw new Error('Empresa no encontrada');
       fila.pingueosSinRespuesta += 1;
-      eventos.push({ timestamp: new Date(), club, empresa, fr: fr.nombre, tipo: 'PINGUEO', origen: 'UI' });
+      fila.fechaUltimoContacto = fecha ?? new Date();
+      eventos.push({ timestamp: new Date(), club, empresa, fr: fr.nombre, tipo: 'PINGUEO', origen });
       return fila;
     },
-    registrarRespuesta(club, empresa, fr, origen = 'UI') {
+    registrarRespuesta(club, empresa, fr, origen = 'UI', fecha) {
       const fila = filas.get(clave(club, empresa));
       if (!fila) throw new Error('Empresa no encontrada');
       fila.pingueosSinRespuesta = 0;
-      if (fila.estado === 'Mail enviado') fila.estado = 'Mail respondido';
+      fila.estado = estadoAlResponder(fila.estado);
+      fila.fechaUltimoContacto = fecha ?? new Date();
       eventos.push({ timestamp: new Date(), club, empresa, fr: fr.nombre, tipo: 'RESPUESTA', origen });
       return fila;
+    },
+    registrarMailDelEncargado(club, empresa, fr, fecha) {
+      return cambiarPorMail(club, empresa, fr, fecha, estadoAlEscribirEncargado);
+    },
+    registrarResumenEnviado(club, empresa, fr, fecha) {
+      return cambiarPorMail(club, empresa, fr, fecha, estadoAlMandarResumen);
     },
     cambiarEstado(club, empresa, nuevo: Estado, fr) {
       const fila = filas.get(clave(club, empresa));
@@ -110,7 +131,6 @@ export function crearFakeCrmService(filasIniciales: FilaCRM[] = []): CrmService 
       fila.estado = 'Reunión coordinada';
       fila.proximaAccion = 'Reunión';
       fila.fechaProximaAccion = fechaEvento;
-      fila.fechaUltimoContacto = new Date();
       if (!yaCoordinada) {
         eventos.push({
           timestamp: new Date(),

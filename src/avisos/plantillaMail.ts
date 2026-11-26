@@ -56,6 +56,8 @@ export function temaDe(club?: Club | null): TemaClub {
 const COLOR_ESTADO: Record<Estado, { fondo: string; texto: string }> = {
   'Mail enviado': { fondo: '#ECE6DB', texto: COLOR.negro },
   'Mail respondido': { fondo: '#DCE6FF', texto: '#1546B8' },
+  'FR viejo mando el mail de traspaso': { fondo: '#FFE3E6', texto: '#B0182B' },
+  'Respondió traspaso': { fondo: '#D1F4F1', texto: '#00756B' },
   'Reunión coordinada': { fondo: '#EDE6F9', texto: '#5A37B0' },
   'Tuvimos reunión, esperando respuesta': { fondo: '#FFF1A6', texto: '#6B5500' },
   Tratativas: { fondo: '#FFE2D4', texto: '#A33500' },

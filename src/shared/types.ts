@@ -1,11 +1,14 @@
 // Contratos entre módulos. Se modifica únicamente por PR aprobado por los 3
-// (ver sección 3.6 y 4 del plan: plan-tp-trama-fundraising.md).
+// (ver plan-implementacion-web.md).
 
 // ---------- Dominio ----------
 export type Club = 'Agro' | 'Consultoría' | 'Finanzas y Tecnología' | 'Emprendedores' | 'Trama Lab';
 
 export type Estado =
-  | 'Mail enviado' | 'Mail respondido' | 'Reunión coordinada'
+  | 'Mail enviado' | 'Mail respondido'
+  // Traspaso: el FR del año pasado le avisó a la empresa quién la sigue este año (Emprendedores).
+  | 'FR viejo mando el mail de traspaso' | 'Respondió traspaso'
+  | 'Reunión coordinada'
   | 'Tuvimos reunión, esperando respuesta' | 'Tratativas'
   | 'Va a ser sponsor' | 'No va a ser sponsor';
 
@@ -16,6 +19,9 @@ export interface Usuario {
   nombre: string;
   club: Club | null; // null para codirectoras
   rol: Rol;
+  admin?: boolean; // columna `admin` de _Usuarios: acceso a todos los clubes + "ver como"
+  // Solo cuando un admin está usando "ver como": mail del admin real. Queda en _Historial (hechoPor).
+  verComoPor?: string;
 }
 
 export interface FilaCRM {
@@ -88,6 +94,7 @@ export interface Evento {
   estadoAnterior?: Estado;
   estadoNuevo?: Estado;
   origen: 'UI' | 'CALENDAR' | 'GMAIL' | 'MANUAL';
+  hechoPor?: string; // mail del admin si la acción se hizo en "ver como"
 }
 
 // ---------- Servicios ----------
@@ -105,6 +112,10 @@ export interface ConfigService { // B
     templatePingueoPostReunionDocId: string;
   };
   getParametro(nombre: string): number; // días de cada regla
+  getParametroTexto(nombre: string): string | null; // parámetros no numéricos (ej. DIA_ENVIO_FR)
+  // Clubes con `activo = TRUE` en _Clubes: los únicos que procesan los triggers (avisos,
+  // historial diario, sync de Gmail/Calendar). Si la columna no existe, todos.
+  getClubesActivos(): Club[];
 }
 
 export interface CrmService { // B
@@ -112,12 +123,23 @@ export interface CrmService { // B
   getFila(club: Club, empresa: string): FilaCRM | null;
   listarFilas(club: Club): FilaCRM[];
   aplicarPostReunion(p: PostReunionConfirmado, fr: Usuario): FilaCRM; // valida transición, upsert, historial
-  registrarPingueo(club: Club, empresa: string, fr: Usuario): FilaCRM;
+  // Suma un pingueo. Lo llama el sync de Gmail cuando se manda el borrador de pingueo (`fecha` =
+  // cuándo se mandó, origen GMAIL). Sin fecha: ahora; sin origen: 'UI'.
+  registrarPingueo(club: Club, empresa: string, fr: Usuario, fecha?: Date, origen?: Evento['origen']): FilaCRM;
   // `origen` es opcional (default 'UI'): lo necesita B6 (sync de Gmail) para que el Evento quede
   // con origen: 'GMAIL' cuando la respuesta se detecta sola, en vez de 'UI' como si la hubiera
   // tocado el FR a mano (A7 sigue llamando esto igual que antes, sin pasar nada).
   // ⚠️ Parámetro nuevo en el contrato: avisar a A y C antes de mergear (regla de la sección 3.6).
-  registrarRespuesta(club: Club, empresa: string, fr: Usuario, origen?: Evento['origen']): FilaCRM;
+  // `fecha`: cuándo llegó la respuesta (el sync de Gmail pasa la del mensaje); si no viene, ahora.
+  registrarRespuesta(club: Club, empresa: string, fr: Usuario, origen?: Evento['origen'], fecha?: Date): FilaCRM;
+  // El tramero encargado le escribió a la empresa en `fecha` (lo detecta el sync de Gmail). Aplica
+  // ESTADO_AL_ESCRIBIR_ENCARGADO ("Respondió traspaso" → "Mail enviado"); si el estado no está en
+  // esa tabla, no hace nada.
+  registrarMailDelEncargado(club: Club, empresa: string, fr: Usuario, fecha: Date): FilaCRM;
+  // Se mandó el mail post-reunión a la empresa en `fecha` (lo detecta el sync de Gmail por el
+  // asunto). Aplica ESTADO_AL_MANDAR_RESUMEN ("Reunión coordinada" → "Tuvimos reunión, esperando
+  // respuesta"); si el estado no está en esa tabla, no hace nada.
+  registrarResumenEnviado(club: Club, empresa: string, fr: Usuario, fecha: Date): FilaCRM;
   cambiarEstado(club: Club, empresa: string, nuevo: Estado, fr: Usuario): FilaCRM;
   // Agregado por B para B5 (sync de Calendar): pasa a "Reunión coordinada" Y fija
   // "Próxima acción"/"Fecha próxima acción" en un solo paso (cambiarEstado no alcanza porque

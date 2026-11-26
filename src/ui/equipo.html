@@ -1,0 +1,39 @@
+<!-- Pestaña "Equipo": todas las empresas del club y en qué estado están. Solo lectura: no hay
+     botones de acción. client.js completa la lista. -->
+<div class="card-head" style="margin-bottom:16px">
+  <div>
+    <h2 class="titulo" style="font-size:26px">Equipo</h2>
+    <p class="muted" style="margin-top:6px">Las empresas de todo el club y en qué está cada una. Solo para ver.</p>
+  </div>
+</div>
+
+<div class="campos" style="margin-bottom:16px">
+  <div class="campo" id="eq-club-campo" hidden>
+    <label for="eq-club">Club</label>
+    <select id="eq-club" class="control"></select>
+  </div>
+  <div class="campo">
+    <label for="eq-tramero">Tramero encargado</label>
+    <select id="eq-tramero" class="control"><option value="">Todos</option></select>
+  </div>
+  <div class="campo">
+    <label for="eq-estado">Estado</label>
+    <select id="eq-estado" class="control"><option value="">Todos</option></select>
+  </div>
+  <div class="campo">
+    <label for="eq-buscar">Empresa</label>
+    <input id="eq-buscar" class="control" placeholder="Buscar…" autocomplete="off">
+  </div>
+</div>
+
+<div class="aviso aviso--error" id="eq-error" role="alert" hidden style="margin-bottom:12px"></div>
+<p class="muted" id="eq-mensaje" hidden>Cargando…</p>
+<p class="muted" id="eq-cuenta" style="margin-bottom:10px"></p>
+
+<ul class="lista" id="lista-equipo" aria-live="polite"></ul>
+
+<div class="vacio" id="eq-vacio" hidden>
+  <svg class="shape"><use data-club-shape href="#shape-trama"/></svg>
+  <b class="titulo" style="font-size:22px">Sin empresas</b>
+  <span class="muted">No hay empresas con este filtro.</span>
+</div>

@@ -10,6 +10,11 @@ export function indiceColumna(encabezados: readonly unknown[], nombre: string): 
   return i;
 }
 
+// Igual que indiceColumna pero devuelve -1 si la columna no está (para columnas opcionales).
+export function indiceColumnaOpcional(encabezados: readonly unknown[], nombre: string): number {
+  return encabezados.findIndex((h) => String(h).trim() === nombre);
+}
+
 export function filaVacia(fila: readonly unknown[]): boolean {
   return fila.every((v) => v === '' || v === null || v === undefined);
 }
@@ -20,9 +25,16 @@ export function filaVacia(fila: readonly unknown[]): boolean {
  * devuelve la fila siguiente a la última — así el upsert nunca hace un `appendRow` a ciegas que
  * salga de los límites de la tabla con formato/desplegables (regla de la sección 6, B2).
  */
-export function primeraFilaVacia(valores: readonly unknown[][]): number {
+export function primeraFilaVacia(valores: readonly unknown[][], indiceClave?: number): number {
+  // Con `indiceClave`, una fila cuenta como libre si esa columna está vacía aunque tenga otras
+  // celdas precargadas (ej. la casilla "Es traspaso?" en FALSE en las filas sin usar).
+  const libre = (fila: readonly unknown[]) => {
+    if (indiceClave === undefined) return filaVacia(fila);
+    const v = fila[indiceClave];
+    return v === '' || v === null || v === undefined;
+  };
   for (let i = 1; i < valores.length; i++) {
-    if (filaVacia(valores[i])) return i + 1;
+    if (libre(valores[i])) return i + 1;
   }
   return valores.length + 1;
 }

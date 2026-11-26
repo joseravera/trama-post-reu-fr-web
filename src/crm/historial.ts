@@ -2,20 +2,20 @@
 // manuales comparando contra _Snapshot. Recibe un CrmService por parámetro (no lo importa de
 // repo.ts) para evitar una dependencia circular repo.ts <-> historial.ts.
 
-import { abrirSpreadsheet } from './config';
+import { abrirConfig } from './config';
 import { CLUBES, HOJAS_SISTEMA } from '../shared/constants';
 import { indiceColumna } from './sheetUtils';
 import { now } from '../shared/clock';
 import type { Club, CrmService, Estado, Evento } from '../shared/types';
 
-const ENCABEZADOS_HISTORIAL = ['timestamp', 'club', 'empresa', 'fr', 'tipo', 'estadoAnterior', 'estadoNuevo', 'origen'];
+const ENCABEZADOS_HISTORIAL = ['timestamp', 'club', 'empresa', 'fr', 'tipo', 'estadoAnterior', 'estadoNuevo', 'origen', 'hechoPor'];
 const ENCABEZADOS_SNAPSHOT = ['club', 'empresa', 'estado', 'timestamp'];
 
 // Nombre de la función global que instala el trigger diario (ver src/main.ts).
 export const NOMBRE_TRIGGER_HISTORIAL = 'detectarCambiosManualesTrigger';
 
 function obtenerOCrearHoja(nombre: string, encabezados: string[]): GoogleAppsScript.Spreadsheet.Sheet {
-  const ss = abrirSpreadsheet();
+  const ss = abrirConfig();
   const existente = ss.getSheetByName(nombre);
   if (existente) return existente;
   const hoja = ss.insertSheet(nombre);
@@ -39,6 +39,7 @@ export function registrarEvento(evento: Evento): void {
     evento.estadoAnterior ?? '',
     evento.estadoNuevo ?? '',
     evento.origen,
+    evento.hechoPor ?? '',
   ]);
 }
 
@@ -83,7 +84,7 @@ export function getEventos(desde: Date, hasta: Date, club?: Club): Evento[] {
  * `cambiarEstado`, Calendar o Gmail) no genera nada nuevo; el resto son ediciones manuales en el
  * sheet y se registran como Evento con origen 'MANUAL'.
  */
-export function detectarCambiosManuales(crm: CrmService): void {
+export function detectarCambiosManuales(crm: CrmService, clubes: readonly Club[] = CLUBES): void {
   const hojaSnapshot = obtenerOCrearHoja(HOJAS_SISTEMA.SNAPSHOT, ENCABEZADOS_SNAPSHOT);
   const valoresSnapshot = hojaSnapshot.getDataRange().getValues();
 
@@ -99,7 +100,7 @@ export function detectarCambiosManuales(crm: CrmService): void {
   const ahora = now();
   const filasNuevasSnapshot: unknown[][] = [];
 
-  for (const club of CLUBES) {
+  for (const club of clubes) {
     const eventosDesdeSnapshot = crm.getEventos(timestampSnapshotAnterior, ahora, club);
     for (const fila of crm.listarFilas(club)) {
       const clave = `${club}|${fila.empresa}`;

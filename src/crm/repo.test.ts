@@ -1,9 +1,12 @@
 import {
   agregarComentario,
+  celdasDesdeFilaCRM,
   filaCRMDesdeValores,
   formatearFechaCorta,
   formatearLineaComentario,
   normalizarNombreEmpresa,
+  parsearFechaCelda,
+  tramosDeEscritura,
   valoresDesdeFilaCRM,
 } from './repo';
 import { COLUMNAS_CRM } from '../shared/constants';
@@ -77,5 +80,49 @@ describe('filaCRMDesdeValores <-> valoresDesdeFilaCRM', () => {
     expect(fila.mail).toBeUndefined();
     expect(fila.fechaProximaAccion).toBeUndefined();
     expect(fila.pingueosSinRespuesta).toBe(0);
+  });
+});
+
+describe('escritura: solo las columnas del sistema', () => {
+  // Como la hoja de Emprendedores: una columna propia en el medio y sin "Pingueos sin respuesta".
+  const ENCABEZADOS_EMPRENDEDORES = [
+    'Empresa', 'Tramero encargado', 'Es traspaso?', 'Persona (de empresa)', 'Rol de la persona', 'Teléfono', 'Mail',
+    'LinkedIn contacto', 'Estado del contacto', 'Comentarios ', 'Fecha primer contacto', 'Fecha último contacto',
+    'Canal', 'Próxima acción', 'Fecha próxima acción',
+  ];
+  const fila: FilaCRM = {
+    club: 'Emprendedores', empresa: 'Despegar', trameroEncargado: 'Martin Mejliker',
+    estado: 'Respondió traspaso', pingueosSinRespuesta: 0,
+  };
+
+  it('nunca escribe la columna "Es traspaso?" y conserva su valor', () => {
+    const celdas = celdasDesdeFilaCRM(ENCABEZADOS_EMPRENDEDORES, fila);
+    expect(celdas.map(([i]) => i)).not.toContain(2);
+    const actuales = ['Despegar', 'Martin Mejliker', true];
+    expect(valoresDesdeFilaCRM(ENCABEZADOS_EMPRENDEDORES, fila, actuales)[2]).toBe(true);
+  });
+
+  it('agrupa en tramos contiguos que saltean las columnas ajenas', () => {
+    const tramos = tramosDeEscritura(celdasDesdeFilaCRM(ENCABEZADOS_EMPRENDEDORES, fila));
+    expect(tramos.map((t) => [t.columna, t.valores.length])).toEqual([[1, 2], [4, 12]]);
+  });
+
+  it('lee la hoja sin "Pingueos sin respuesta" como 0 y no la escribe', () => {
+    const valores = ['Despegar', 'Martin Mejliker', true, '', '', '', '', '', 'FR viejo mando el mail de traspaso', '', '24/11/2026'];
+    const leida = filaCRMDesdeValores('Emprendedores', ENCABEZADOS_EMPRENDEDORES, valores);
+    expect(leida.pingueosSinRespuesta).toBe(0);
+    expect(leida.estado).toBe('FR viejo mando el mail de traspaso');
+    expect(leida.fechaPrimerContacto?.toISOString().slice(0, 10)).toBe('2026-11-24');
+    expect(celdasDesdeFilaCRM(ENCABEZADOS_EMPRENDEDORES, leida)).toHaveLength(14);
+  });
+});
+
+describe('parsearFechaCelda', () => {
+  it('entiende dd/mm/yyyy, Date y vacío', () => {
+    expect(parsearFechaCelda('5/3/2026')?.toISOString()).toBe('2026-03-05T15:00:00.000Z');
+    const d = new Date('2026-01-01T00:00:00Z');
+    expect(parsearFechaCelda(d)).toBe(d);
+    expect(parsearFechaCelda('')).toBeUndefined();
+    expect(parsearFechaCelda('cualquier cosa')).toBeUndefined();
   });
 });

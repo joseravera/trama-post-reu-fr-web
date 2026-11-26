@@ -25,8 +25,12 @@ import {
   reintentarBorradorUI,
   listarSeguimientos,
   registrarPingueo,
+  listarUsuarios,
+  verComo,
+  listarEquipo,
 } from './app/webapp';
 import { crearCrmService } from './crm/repo';
+import { crearConfigService } from './crm/config';
 import { NOMBRE_TRIGGER_HISTORIAL, detectarCambiosManuales, instalarTriggerDiarioHistorial } from './crm/historial';
 import { instalarTriggersUsuario, desinstalarTriggersUsuario } from './sync/triggersUsuario';
 import { sincronizarCalendar } from './sync/calendar';
@@ -35,7 +39,7 @@ import { instalarTriggersCentrales, ejecutarEnvioAgendaYAvisos, demoAvanzarDias 
 import { probarCrmManualmente, verificarTemplatesPingueo } from './debug/pruebasManuales';
 
 function detectarCambiosManualesTrigger(): void {
-  detectarCambiosManuales(crearCrmService());
+  detectarCambiosManuales(crearCrmService(), crearConfigService().getClubesActivos());
 }
 
 const exportsGlobales: Record<string, unknown> = {
@@ -52,6 +56,9 @@ const exportsGlobales: Record<string, unknown> = {
   reintentarBorrador: reintentarBorradorUI,
   listarSeguimientos,
   registrarPingueo,
+  listarUsuarios,
+  verComo,
+  listarEquipo,
   instalarTriggersUsuario,
   desinstalarTriggersUsuario,
   sincronizarCalendar,

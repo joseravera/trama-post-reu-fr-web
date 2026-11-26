@@ -11,8 +11,10 @@ const MS_POR_DIA = 24 * 60 * 60 * 1000;
 
 export function sincronizarCalendar(): void {
   const mailUsuario = Session.getActiveUser().getEmail();
-  const usuario = crearConfigService().getUsuario(mailUsuario);
+  const config = crearConfigService();
+  const usuario = config.getUsuario(mailUsuario);
   if (!usuario || !usuario.club) return; // no registrado, o codirectora sin club fijo: no sincroniza
+  if (!config.getClubesActivos().includes(usuario.club)) return; // club que todavía no usa el sistema
 
   const crm = crearCrmService();
   const filas = crm.listarFilas(usuario.club);

@@ -61,6 +61,20 @@ function registrarPingueo(club, empresa) {
   return TramaImpl.registrarPingueo(club, empresa);
 }
 
+// Vista "Equipo" (solo lectura).
+function listarEquipo(club) {
+  return TramaImpl.listarEquipo(club);
+}
+
+// Admin: "ver como" otro usuario.
+function listarUsuarios() {
+  return TramaImpl.listarUsuarios();
+}
+
+function verComo(mail) {
+  return TramaImpl.verComo(mail);
+}
+
 function instalarTriggersUsuario() {
   return TramaImpl.instalarTriggersUsuario();
 }

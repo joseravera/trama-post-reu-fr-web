@@ -1,8 +1,8 @@
 // Dueño: Persona C (sección 7, C6). Deduplicación por clave (tipo|club|empresa|fecha) en _LogAvisos.
-// Depende de Sheets: no se puede testear con Jest (ver README, sección 9). Reusa abrirSpreadsheet()
+// Depende de Sheets: no se puede testear con Jest (ver README, sección 9). Reusa abrirConfig()
 // de crm/config.ts (B1) en vez de abrir el spreadsheet de nuevo (regla de la sección 3.3).
 
-import { abrirSpreadsheet } from '../crm/config';
+import { abrirConfig } from '../crm/config';
 import { HOJAS_SISTEMA } from '../shared/constants';
 import type { Aviso } from '../shared/types';
 
@@ -12,7 +12,7 @@ const COLUMNA_CLAVE = 0;
 const COLUMNA_ESTADO = 6;
 
 function hojaLogAvisos(): GoogleAppsScript.Spreadsheet.Sheet {
-  const hoja = abrirSpreadsheet().getSheetByName(HOJAS_SISTEMA.LOG_AVISOS);
+  const hoja = abrirConfig().getSheetByName(HOJAS_SISTEMA.LOG_AVISOS);
   if (!hoja) throw new Error(`No existe la hoja ${HOJAS_SISTEMA.LOG_AVISOS}`);
   return hoja;
 }

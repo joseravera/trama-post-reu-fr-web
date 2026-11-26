@@ -3,13 +3,13 @@ import type { PostReunionConfirmado } from '../shared/types';
 
 describe('construirAsunto', () => {
   it('reemplaza el nombre de la empresa en el template de asunto', () => {
-    expect(construirAsunto('Acme S.A.')).toBe('Trama ITBA x Acme S.A. — Resumen de la reunión');
+    expect(construirAsunto('Acme S.A.')).toBe('Acme S.A. & Trama ITBA');
   });
 });
 
 describe('construirAsuntoPingueo', () => {
   it('reemplaza el nombre de la empresa en el asunto de pingueo', () => {
-    expect(construirAsuntoPingueo('Acme S.A.')).toBe('Trama ITBA x Acme S.A.');
+    expect(construirAsuntoPingueo('Acme S.A.')).toBe('Acme S.A. & Trama ITBA');
   });
 });
 

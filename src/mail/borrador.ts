@@ -15,6 +15,8 @@ import {
   validarTemplatePingueo,
   type DatosTemplate,
 } from './template';
+import { guardarBorradorPendiente } from '../sync/borradoresPendientes';
+import { extraerMails } from '../shared/mails';
 
 export function construirDatosTemplate(p: PostReunionConfirmado, fechaCarga: Date): DatosTemplate {
   return {
@@ -88,15 +90,27 @@ function obtenerFirmaHtml(): string | null {
   }
 }
 
-// Idempotencia: si ya había un borrador del sistema para esta empresa (mismo destinatario y
-// asunto), lo reemplaza en vez de duplicarlo.
-function borrarBorradorPrevio(destinatario: string, asunto: string): void {
-  GmailApp.getDrafts().forEach((draft) => {
-    const mensaje = draft.getMessage();
-    if (mensaje.getSubject() === asunto && mensaje.getTo().includes(destinatario)) {
-      draft.deleteDraft();
-    }
-  });
+// Idempotencia: si la app ya había creado un borrador de este tipo para esta empresa y todavía
+// no se mandó, lo reemplaza en vez de duplicarlo. Se identifica por el ID guardado en las
+// propiedades de la cuenta (no por el asunto: el post-reunión y el pingueo tienen el mismo).
+type TipoBorrador = 'POST_REUNION' | 'PINGUEO';
+
+function claveBorrador(tipo: TipoBorrador, club: string, empresa: string): string {
+  return `BORRADOR|${tipo}|${club}|${empresa.trim().toLowerCase()}`;
+}
+
+function borrarBorradorPrevio(tipo: TipoBorrador, club: string, empresa: string): void {
+  const id = PropertiesService.getUserProperties().getProperty(claveBorrador(tipo, club, empresa));
+  if (!id) return;
+  try {
+    GmailApp.getDraft(id).deleteDraft();
+  } catch (e) {
+    // Ya se mandó o lo borraron a mano: no hay nada que reemplazar.
+  }
+}
+
+function recordarBorrador(tipo: TipoBorrador, club: string, empresa: string, draft: GoogleAppsScript.Gmail.GmailDraft): void {
+  PropertiesService.getUserProperties().setProperty(claveBorrador(tipo, club, empresa), draft.getId());
 }
 
 function urlBorrador(draft: GoogleAppsScript.Gmail.GmailDraft): string {
@@ -112,7 +126,7 @@ export function crearMailService(config: ConfigService): MailService {
       return construirHtmlDelMail(config, p);
     },
     crearBorrador(p: PostReunionConfirmado, fr: Usuario): { draftId: string; url: string } {
-      const destinatario = p.datos.mail;
+      const destinatario = extraerMails(p.datos.mail).join(', ');
       if (!destinatario) {
         throw new Error(`No se puede crear el borrador para ${p.empresa}: falta el mail de contacto`);
       }
@@ -121,7 +135,7 @@ export function crearMailService(config: ConfigService): MailService {
       const htmlCuerpo = construirHtmlDelMail(config, p) + (firma ? `<br><br>${firma}` : '');
       const asunto = construirAsunto(p.empresa);
 
-      borrarBorradorPrevio(destinatario, asunto);
+      borrarBorradorPrevio('POST_REUNION', p.club, p.empresa);
 
       const adjuntos = [
         ...obtenerAdjuntosFijos(club.carpetaAdjuntosId),
@@ -131,6 +145,9 @@ export function crearMailService(config: ConfigService): MailService {
         htmlBody: htmlCuerpo,
         attachments: adjuntos,
       });
+      recordarBorrador('POST_REUNION', p.club, p.empresa, draft);
+      // Para que el sync de Gmail sepa cuándo se mandó (ver sync/borradoresPendientes.ts).
+      guardarBorradorPendiente('POST_REUNION', p.club, p.empresa, draft.getMessage().getThread().getId());
       return { draftId: draft.getId(), url: urlBorrador(draft) };
     },
     crearBorradorPingueo(p: DatosPingueo, _fr: Usuario): { draftId: string; url: string } {
@@ -138,9 +155,14 @@ export function crearMailService(config: ConfigService): MailService {
       const htmlCuerpo = construirHtmlDelMailPingueo(config, p) + (firma ? `<br><br>${firma}` : '');
       const asunto = construirAsuntoPingueo(p.empresa);
 
-      borrarBorradorPrevio(p.mail, asunto);
+      borrarBorradorPrevio('PINGUEO', p.club, p.empresa);
 
-      const draft = GmailApp.createDraft(p.mail, asunto, textoPlano(htmlCuerpo), { htmlBody: htmlCuerpo });
+      const destinatarios = extraerMails(p.mail).join(', ');
+      if (!destinatarios) throw new Error(`No se puede crear el pingueo para ${p.empresa}: falta el mail de contacto`);
+      const draft = GmailApp.createDraft(destinatarios, asunto, textoPlano(htmlCuerpo), { htmlBody: htmlCuerpo });
+      recordarBorrador('PINGUEO', p.club, p.empresa, draft);
+      // El pingueo se cuenta en el CRM cuando se manda, no ahora (ver sync/borradoresPendientes.ts).
+      guardarBorradorPendiente('PINGUEO', p.club, p.empresa, draft.getMessage().getThread().getId());
       return { draftId: draft.getId(), url: urlBorrador(draft) };
     },
   };

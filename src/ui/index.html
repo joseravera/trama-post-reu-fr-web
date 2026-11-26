@@ -69,6 +69,13 @@
           <p>Pegá las notas de Granola. Nosotros completamos el CRM y te dejamos el mail armado en tu Gmail, listo para revisar.</p>
         </section>
 
+        <!-- Solo admin: "ver como" otro usuario (ver plan-implementacion-web.md, 2.1). -->
+        <div class="aviso aviso--info" id="ver-como" style="margin-bottom:16px; flex-wrap:wrap; align-items:center" hidden>
+          <span id="ver-como-texto">Ver la app como:</span>
+          <select id="ver-como-usuario" class="control" style="flex:1; min-width:220px" aria-label="Usuario"></select>
+          <button type="button" class="btn btn--secundario btn--chico" id="ver-como-volver" hidden>Volver a mi usuario</button>
+        </div>
+
         <div id="avisos-globales"></div>
 
         <nav class="tabs" role="tablist" aria-label="Secciones">
@@ -76,6 +83,7 @@
           <button type="button" class="tab" role="tab" id="tab-seg" aria-controls="panel-seg" aria-selected="false">
             Mis seguimientos <span class="cuenta" data-cuenta-seg hidden>0</span>
           </button>
+          <button type="button" class="tab" role="tab" id="tab-equipo" aria-controls="panel-equipo" aria-selected="false">Equipo</button>
         </nav>
 
         <section class="panel" id="panel-carga" role="tabpanel" aria-labelledby="tab-carga">
@@ -85,6 +93,10 @@
 
         <section class="panel" id="panel-seg" role="tabpanel" aria-labelledby="tab-seg" hidden>
           <?!= include('seguimientos'); ?>
+        </section>
+
+        <section class="panel" id="panel-equipo" role="tabpanel" aria-labelledby="tab-equipo" hidden>
+          <?!= include('equipo'); ?>
         </section>
       </div>
 

@@ -1,6 +1,7 @@
 // Dueño: Persona A (sección 5, A4). Lógica pura — se testea sin Apps Script.
 
 import { ESTADOS } from '../shared/constants';
+import { unirMails, validarListaMails } from '../shared/mails';
 import type { Estado, Extraccion, FilaCRM } from '../shared/types';
 import type { RespuestaGemini } from './schema';
 
@@ -32,9 +33,9 @@ export function fechaDeDia(dia: string): Date {
 
 // ---------- Validaciones sueltas ----------
 
+// Uno o varios mails (separados por coma, ";", "/" o espacios).
 export function validarMail(mail: string | null): boolean {
-  if (mail === null) return true;
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail);
+  return validarListaMails(mail);
 }
 
 // La fecha de próxima acción no puede ser anterior a la reunión. Se comparan días en hora Argentina
@@ -53,7 +54,8 @@ export function combinarConFilaExistente(extraccion: Extraccion, filaExistente: 
     ...extraccion,
     persona: extraccion.persona ?? filaExistente.persona ?? null,
     rolPersona: extraccion.rolPersona ?? filaExistente.rolPersona ?? null,
-    mail: extraccion.mail ?? filaExistente.mail ?? null,
+    // Mails: todos los del CRM más el que haya salido de las notas, como lista "a, b".
+    mail: unirMails(filaExistente.mail, extraccion.mail),
     telefono: extraccion.telefono ?? filaExistente.telefono ?? null,
     linkedin: extraccion.linkedin ?? filaExistente.linkedin ?? null,
   };
